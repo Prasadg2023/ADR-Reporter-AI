@@ -5,7 +5,12 @@ import requests
 import urllib.parse
 import base64
 import os
-import speech_recognition as sr
+try:
+    import speech_recognition as sr
+    HAS_SPEECH_RECOGNITION = True
+except ImportError:
+    HAS_SPEECH_RECOGNITION = False
+
 from database import insert_report
 from utils import detect_drug_category
 
@@ -574,6 +579,8 @@ def map_gender(val_translated, val_original):
 
 # --- PYTHON SPEECH RECOGNITION TRANSCRIBER ---
 def transcribe_audio(audio_file, language_code):
+    if not HAS_SPEECH_RECOGNITION:
+        return "Error: Speech recognition library is not available on this server."
     r = sr.Recognizer()
     try:
         with sr.AudioFile(audio_file) as source:
@@ -648,8 +655,12 @@ elif st.session_state.flow_state == "chatting":
         lang_code = LANG_CODES.get(lang, "en-US")
         
         # Render Voice input and chat input together in a beautiful glass container
-        st.markdown(f"#### 🎙️ Record answer for: *{label_text}*")
-        audio_file = st.audio_input("Record voice / आवाज रेकॉर्ड करा", key=f"audio_input_{q_index}")
+        if HAS_SPEECH_RECOGNITION:
+            st.markdown(f"#### 🎙️ Record answer for: *{label_text}*")
+            audio_file = st.audio_input("Record voice / आवाज रेकॉर्ड करा", key=f"audio_input_{q_index}")
+        else:
+            st.info("🎙️ Voice input is temporarily disabled (missing dependency). Please type your response below.")
+            audio_file = None
         
         placeholder = UI_TEXTS[lang]["input_placeholder"].format(label=label_text)
         chat_val = st.chat_input(placeholder)
