@@ -5,6 +5,9 @@ import requests
 import urllib.parse
 import base64
 import os
+from gtts import gTTS
+import io
+
 try:
     import speech_recognition as sr
     HAS_SPEECH_RECOGNITION = True
@@ -13,6 +16,23 @@ except ImportError:
 
 from database import insert_report
 from utils import detect_drug_category
+
+@st.cache_data(show_spinner=False)
+def get_question_audio(text, lang):
+    lang_map = {
+        "English": "en",
+        "Hindi": "hi",
+        "Marathi": "mr"
+    }
+    lang_code = lang_map.get(lang, "en")
+    try:
+        tts = gTTS(text=text, lang=lang_code)
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        fp.seek(0)
+        return fp.read()
+    except Exception:
+        return None
 
 # --- BASE64 IMAGE LOADER ---
 def get_base64_image(image_path):
@@ -639,6 +659,22 @@ elif st.session_state.flow_state == "chatting":
             
     # Input Processing
     q_index = st.session_state.current_q_index
+    
+    # Speak the current question aloud
+    if q_index < len(QUESTIONS):
+        current_q = QUESTIONS[q_index]
+        # Skip voice output if the question is auto-skipped
+        if not (current_q["key"] == "drug_category_manual" and st.session_state.auto_category != "Others (Low Confidence)"):
+            question_text = current_q["text"][lang]
+            audio_bytes = get_question_audio(question_text, lang)
+            if audio_bytes:
+                if "last_played_q_index" not in st.session_state or st.session_state.last_played_q_index != q_index:
+                    autoplay = True
+                    st.session_state.last_played_q_index = q_index
+                else:
+                    autoplay = False
+                st.audio(audio_bytes, format="audio/mp3", autoplay=autoplay)
+                
     user_input = None
     
     if q_index < len(QUESTIONS):
