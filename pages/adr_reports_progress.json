@@ -1,0 +1,25 @@
+{
+    "language": "Marathi",
+    "current_q_index": 1,
+    "answers": {
+        "patient_name": "saurabh"
+    },
+    "answers_original": {
+        "patient_name": "saurabh"
+    },
+    "chat_history": [
+        {
+            "role": "assistant",
+            "content": "नमस्कार! मी ADR रिपोर्टर AI आहे. औषधामुळे झालेल्या दुष्परिणामाची (रिएक्शन) नोंद करण्यास मी तुम्हाला मदत करेन. मी तुम्हाला २२ सोपे प्रश्न विचारीन. तुम्ही बोलून किंवा टाईप करून उत्तर देऊ शकता. चला तर मग सुरू करूया."
+        },
+        {
+            "role": "assistant",
+            "content": "कृपया रुग्णाचे पूर्ण नाव सांगा."
+        },
+        {
+            "role": "user",
+            "content": "saurabh"
+        }
+    ],
+    "auto_category": "Others"
+}

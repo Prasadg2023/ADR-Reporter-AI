@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 import time
 import pandas as pd
 import requests
@@ -428,6 +429,58 @@ if "chat_history" not in st.session_state:
 if "auto_category" not in st.session_state:
     st.session_state.auto_category = "Others"
 
+# --- PROGRESS PERSISTENCE SETUP ---
+PROGRESS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "adr_reports_progress.json")
+
+def save_progress():
+    progress_data = {
+        "language": st.session_state.language,
+        "current_q_index": st.session_state.current_q_index,
+        "answers": st.session_state.answers,
+        "answers_original": st.session_state.answers_original,
+        "chat_history": st.session_state.chat_history,
+        "auto_category": st.session_state.auto_category
+    }
+    try:
+        with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
+            json.dump(progress_data, f, ensure_ascii=False, indent=4)
+    except Exception:
+        pass
+
+# Check and prompt to resume incomplete assessment if found
+if st.session_state.flow_state == "language_selection" and os.path.exists(PROGRESS_FILE):
+    st.markdown('<div class="glass-card" style="text-align: center;">', unsafe_allow_html=True)
+    st.markdown("### 🔄 Resume Previous Assessment?")
+    st.markdown("<p style='font-size:14px; opacity:0.8;'>We found an incomplete assessment from your last visit. Would you like to resume from where you left off?</p>", unsafe_allow_html=True)
+    
+    col_resume, col_new = st.columns(2)
+    with col_resume:
+        if st.button("Yes, Resume Assessment", use_container_width=True, type="primary"):
+            try:
+                with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
+                    progress_data = json.load(f)
+                st.session_state.language = progress_data.get("language")
+                st.session_state.current_q_index = progress_data.get("current_q_index", 0)
+                st.session_state.answers = progress_data.get("answers", {})
+                st.session_state.answers_original = progress_data.get("answers_original", {})
+                st.session_state.chat_history = progress_data.get("chat_history", [])
+                st.session_state.auto_category = progress_data.get("auto_category", "Others")
+                st.session_state.flow_state = "chatting"
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to load progress: {e}")
+                
+    with col_new:
+        if st.button("No, Start New Assessment", use_container_width=True):
+            try:
+                os.remove(PROGRESS_FILE)
+            except Exception:
+                pass
+            st.rerun()
+            
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+
 # --- HELPER FUNCTIONS ---
 def add_msg(role, content):
     st.session_state.chat_history.append({"role": role, "content": content})
@@ -623,6 +676,33 @@ def transcribe_audio(audio_file, language_code):
 # --- UI RENDER ---
 lang = st.session_state.language if st.session_state.language else "English"
 
+# Sidebar options for quitting assessment
+if st.session_state.flow_state in ["chatting", "summary"]:
+    st.sidebar.header("Options")
+    if st.sidebar.button("🚪 Quit Assessment", use_container_width=True):
+        st.session_state.confirm_quit = True
+        st.rerun()
+
+# Confirm Quit Assessment Dialog
+if st.session_state.get("confirm_quit", False):
+    st.markdown('<div class="glass-card" style="text-align: center;">', unsafe_allow_html=True)
+    st.markdown("### ⚠️ Confirm Quit Assessment")
+    st.markdown("<p style='font-size:14px; opacity:0.8;'>Are you sure you want to quit? Your current progress will be saved so you can resume later.</p>", unsafe_allow_html=True)
+    
+    col_yes, col_no = st.columns(2)
+    with col_yes:
+        if st.button("Yes, Quit & Save", use_container_width=True, type="primary"):
+            save_progress()
+            st.session_state.clear()
+            st.rerun()
+    with col_no:
+        if st.button("No, Continue Assessment", use_container_width=True):
+            st.session_state.confirm_quit = False
+            st.rerun()
+            
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+
 # Display Pharmacist Avatar photo and title layout
 st.markdown('<div class="glass-card" style="padding: 15px; margin-bottom: 25px;">', unsafe_allow_html=True)
 col1, col2 = st.columns([1, 4])
@@ -696,29 +776,53 @@ elif st.session_state.flow_state == "chatting":
         label_text = current_q["label"].get(lang, current_q["label"]["English"])
         lang_code = LANG_CODES.get(lang, "en-US")
         
-        # Render Voice input and chat input together in a beautiful glass container
-        if HAS_SPEECH_RECOGNITION:
-            st.markdown(f"#### 🎙️ Record answer for: *{label_text}*")
-            audio_file = st.audio_input("Record voice / आवाज रेकॉर्ड करा", key=f"audio_input_{q_index}")
+        # Check if we are in confirmation/editing state for the current response
+        if "temp_response" in st.session_state and st.session_state.temp_response is not None:
+            st.markdown(f'<div class="glass-card">', unsafe_allow_html=True)
+            st.markdown(f"### 🔍 Confirm your response for: **{label_text}**")
+            
+            edited_response = st.text_area(
+                "You can edit the text manually before confirming:",
+                value=st.session_state.temp_response,
+                key=f"edit_temp_{q_index}"
+            )
+            
+            col_conf, col_cancel = st.columns(2)
+            with col_conf:
+                if st.button("✅ Confirm & Save", use_container_width=True, type="primary"):
+                    user_input = edited_response
+                    st.session_state.temp_response = None
+            with col_cancel:
+                if st.button("🔄 Cancel & Re-record", use_container_width=True):
+                    st.session_state.temp_response = None
+                    st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
         else:
-            st.info("🎙️ Voice input is temporarily disabled (missing dependency). Please type your response below.")
-            audio_file = None
-        
-        placeholder = UI_TEXTS[lang]["input_placeholder"].format(label=label_text)
-        chat_val = st.chat_input(placeholder)
-        
-        # Process voice recording input
-        if audio_file:
-            with st.spinner("🎙️ Transcribing voice... / आवाज का अनुवाद हो रहा है..."):
-                speech_text = transcribe_audio(audio_file, lang_code)
-                if speech_text.startswith("Error:"):
-                    st.error(speech_text)
-                else:
-                    user_input = speech_text
-                    
-        # Process keyboard text input
-        if chat_val:
-            user_input = chat_val
+            # Render Voice input and chat input together in a beautiful glass container
+            if HAS_SPEECH_RECOGNITION:
+                st.markdown(f"#### 🎙️ Record answer for: *{label_text}*")
+                audio_file = st.audio_input("Record voice / आवाज रेकॉर्ड करा", key=f"audio_input_{q_index}")
+            else:
+                st.info("🎙️ Voice input is temporarily disabled (missing dependency). Please type your response below.")
+                audio_file = None
+            
+            placeholder = UI_TEXTS[lang]["input_placeholder"].format(label=label_text)
+            chat_val = st.chat_input(placeholder)
+            
+            # Process voice recording input
+            if audio_file:
+                with st.spinner("🎙️ Transcribing voice... / आवाज का अनुवाद हो रहा है..."):
+                    speech_text = transcribe_audio(audio_file, lang_code)
+                    if speech_text.startswith("Error:"):
+                        st.error(speech_text)
+                    else:
+                        st.session_state.temp_response = speech_text
+                        st.rerun()
+                        
+            # Process keyboard text input
+            if chat_val:
+                st.session_state.temp_response = chat_val
+                st.rerun()
         
         if user_input:
             # Add user answer to chat
@@ -761,6 +865,9 @@ elif st.session_state.flow_state == "chatting":
                 st.session_state.answers[current_q["key"]] = val_translated
                 st.session_state.answers_original[current_q["key"]] = val_original
                 st.session_state.current_q_index += 1
+            
+            # Save progress in background
+            save_progress()
             
             # Confirmation Pattern (Original and translated display)
             if val_translated != val_original and val_translated.lower() != val_original.lower():
@@ -836,18 +943,77 @@ elif st.session_state.flow_state == "summary":
     df.index = range(1, len(df) + 1)
     st.table(df)
     
+    # Summary editing expander
+    with st.expander("✏️ Edit any response"):
+        edit_options = [q["label"].get(lang, q["label"]["English"]) for q in QUESTIONS]
+        selected_edit_label = st.selectbox("Select field to edit:", edit_options, key="select_edit_field")
+        
+        # Find corresponding question key
+        selected_q = next(q for q in QUESTIONS if q["label"].get(lang, q["label"]["English"]) == selected_edit_label)
+        key = selected_q["key"]
+        
+        current_val_orig = st.session_state.answers_original.get(key, "")
+        new_val_orig = st.text_input(f"New response for '{selected_edit_label}':", value=current_val_orig, key=f"edit_input_{key}")
+        
+        if st.button("💾 Save Changes", use_container_width=True, key=f"save_edit_{key}"):
+            st.session_state.answers_original[key] = new_val_orig
+            
+            # Translate to English
+            val_normalized = normalize_devanagari_numbers(new_val_orig)
+            if key == "patient_email":
+                val_normalized = normalize_email(val_normalized)
+            elif key == "patient_mobile":
+                val_normalized = normalize_mobile(val_normalized)
+            val_normalized = translate_transliterated_marathi_hindi(val_normalized)
+            val_translated = translate_to_english(val_normalized)
+            
+            # Map skip / no values
+            val_mapped = map_negative_or_skip(new_val_orig)
+            if val_mapped in ["Unknown", "None"]:
+                val_translated = val_mapped
+                
+            if key == "gender":
+                val_translated = map_gender(val_translated, new_val_orig)
+                
+            st.session_state.answers[key] = val_translated
+            
+            # Auto-detect category if drug name changed
+            if key == "drug_name":
+                st.session_state.auto_category = detect_drug_category(val_translated)
+                
+            # Re-finalize drug category in case it changed
+            manual_cat = st.session_state.answers.get("drug_category_manual", "Unknown")
+            final_cat = st.session_state.auto_category if manual_cat == "Unknown" else manual_cat
+            st.session_state.answers["final_drug_category"] = final_cat
+            
+            save_progress()
+            st.success(f"Updated '{selected_edit_label}' successfully!")
+            st.rerun()
+            
     col_sub, col_rest = st.columns(2)
     with col_sub:
         if st.button(UI_TEXTS[lang]["btn_submit"], type="primary", use_container_width=True):
             # Save to DB
             success = insert_report(st.session_state.answers)
             if success:
+                # Delete progress file on successful final submission
+                if os.path.exists(PROGRESS_FILE):
+                    try:
+                        os.remove(PROGRESS_FILE)
+                    except Exception:
+                        pass
                 st.session_state.flow_state = "completed"
                 st.rerun()
             else:
                 st.error("Failed to save report. Please check database connection.")
     with col_rest:
         if st.button(UI_TEXTS[lang]["btn_restart"], use_container_width=True):
+            # Delete progress file
+            if os.path.exists(PROGRESS_FILE):
+                try:
+                    os.remove(PROGRESS_FILE)
+                except Exception:
+                    pass
             st.session_state.clear()
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
