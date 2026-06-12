@@ -1066,6 +1066,7 @@ def generate_report_pdf(report_data):
             pdf.cell(55, 7, txt=safe_val2, ln=True)
         else:
             pdf.multi_cell(145, 7, txt=safe_val1)
+            pdf.set_x(15)
 
     # 1. Report Metadata
     print_row("Report ID", report_data.get('report_id', 'New'), "Submission Date", report_data.get('submission_timestamp', 'N/A'))

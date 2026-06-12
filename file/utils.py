@@ -76,6 +76,7 @@ def generate_report_pdf(report_data):
         pdf.cell(50, 10, txt=f"{safe_label}:", ln=False)
         pdf.set_font("Helvetica", size=12)
         pdf.multi_cell(0, 10, txt=safe_val)
+        pdf.set_x(15)
         
     # Save to a temporary file
     temp_dir = tempfile.gettempdir()
