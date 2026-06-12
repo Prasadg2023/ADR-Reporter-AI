@@ -4,6 +4,10 @@ import sqlite3
 import streamlit as st
 import os
 
+# Absolute path for SQLite database to keep data storage location consistent
+DB_DIR = os.path.dirname(os.path.abspath(__file__))
+SQLITE_DB_PATH = os.path.join(DB_DIR, "adr_reports.db")
+
 # Database Configuration
 # These can be changed by the user in MySQL Workbench or Streamlit Secrets
 DB_HOST = "localhost"
@@ -61,7 +65,7 @@ def init_db():
     check_mysql_available()
     
     if _use_sqlite:
-        conn = sqlite3.connect("adr_reports.db")
+        conn = sqlite3.connect(SQLITE_DB_PATH)
         cursor = conn.cursor()
         try:
             # Create Table in SQLite (SQLite uses INTEGER PRIMARY KEY for auto-increment)
@@ -210,7 +214,7 @@ def insert_report(report_data):
     values = tuple(report_data.get(field, None) for field in fields)
     
     if _use_sqlite:
-        conn = sqlite3.connect("adr_reports.db")
+        conn = sqlite3.connect(SQLITE_DB_PATH)
         cursor = conn.cursor()
         placeholders = ", ".join(["?"] * len(fields))
         columns = ", ".join(fields)
@@ -218,8 +222,16 @@ def insert_report(report_data):
         try:
             cursor.execute(insert_query, values)
             conn.commit()
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
             return True
         except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             st.error(f"Error inserting report to SQLite: {e}")
             return False
         finally:
@@ -237,8 +249,16 @@ def insert_report(report_data):
         try:
             cursor.execute(insert_query, values)
             conn.commit()
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
             return True
         except Error as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             st.error(f"Error inserting report to MySQL: {e}")
             return False
         finally:
@@ -250,7 +270,7 @@ def get_all_reports():
     check_mysql_available()
     
     if _use_sqlite:
-        conn = sqlite3.connect("adr_reports.db")
+        conn = sqlite3.connect(SQLITE_DB_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         try:
