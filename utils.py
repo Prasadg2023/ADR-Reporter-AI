@@ -1033,7 +1033,7 @@ def generate_report_pdf(report_data):
     pdf.rect(15, 15, 180, 15, style='F')
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", style="B", size=13)
-    pdf.cell(180, 15, txt="ADVERSE DRUG REACTION REPORT (PvPI STYLE)", ln=True, align='C')
+    pdf.cell(180, 15, txt="ADVERSE DRUG REACTION REPORT", ln=True, align='C')
     pdf.ln(5)
     
     pdf.set_text_color(0, 0, 0)
