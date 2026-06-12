@@ -463,9 +463,9 @@ if st.session_state.flow_state == "language_selection" and os.path.exists(PROGRE
                 st.session_state.current_q_index = progress_data.get("current_q_index", 0)
                 st.session_state.answers = progress_data.get("answers", {})
                 st.session_state.answers_original = progress_data.get("answers_original", {})
-                st.session_state.chat_history = progress_data.get("chat_history", [])
                 st.session_state.auto_category = progress_data.get("auto_category", "Others")
                 st.session_state.flow_state = "chatting"
+                rebuild_chat_history()
                 st.rerun()
             except Exception as e:
                 st.error(f"Failed to load progress: {e}")
@@ -484,6 +484,52 @@ if st.session_state.flow_state == "language_selection" and os.path.exists(PROGRE
 # --- HELPER FUNCTIONS ---
 def add_msg(role, content):
     st.session_state.chat_history.append({"role": role, "content": content})
+
+def rebuild_chat_history():
+    st.session_state.chat_history = []
+    lang = st.session_state.language
+    if not lang:
+        return
+    st.session_state.chat_history.append({"role": "assistant", "content": UI_TEXTS[lang]["welcome_msg"]})
+    st.session_state.chat_history.append({"role": "assistant", "content": QUESTIONS[0]["text"][lang]})
+    
+    for i in range(st.session_state.current_q_index):
+        q = QUESTIONS[i]
+        if q["key"] == "drug_category_manual" and st.session_state.auto_category != "Others (Low Confidence)":
+            continue
+        if q["key"] == "physician_contact" and st.session_state.answers.get("physician_name") in ["None", "Unknown"]:
+            continue
+            
+        orig = st.session_state.answers_original.get(q["key"])
+        trans = st.session_state.answers.get(q["key"])
+        if orig is None:
+            continue
+            
+        st.session_state.chat_history.append({"role": "user", "content": orig})
+        
+        label_text = q["label"].get(lang, q["label"]["English"])
+        if trans != orig and trans.lower() != orig.lower():
+            display_val = f"{orig} (English: {trans})"
+        else:
+            display_val = orig
+        conf_msg = f"**{i + 1}. {label_text}**\n{UI_TEXTS[lang]['you_said']}: {display_val}\n{UI_TEXTS[lang]['recorded']}"
+        st.session_state.chat_history.append({"role": "assistant", "content": conf_msg})
+        
+        if q["key"] == "drug_name":
+            detected = st.session_state.auto_category
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": UI_TEXTS[lang]["detected_category"].format(detected=detected)
+            })
+            
+        next_i = i + 1
+        if next_i < len(QUESTIONS) and QUESTIONS[next_i]["key"] == "drug_category_manual" and st.session_state.auto_category != "Others (Low Confidence)":
+            next_i += 1
+        if next_i < len(QUESTIONS) and QUESTIONS[next_i]["key"] == "physician_contact" and st.session_state.answers.get("physician_name") in ["None", "Unknown"]:
+            next_i += 1
+            
+        if next_i < len(QUESTIONS) and next_i <= st.session_state.current_q_index:
+            st.session_state.chat_history.append({"role": "assistant", "content": QUESTIONS[next_i]["text"][lang]})
 
 def translate_to_english(text):
     if not text:
@@ -676,9 +722,23 @@ def transcribe_audio(audio_file, language_code):
 # --- UI RENDER ---
 lang = st.session_state.language if st.session_state.language else "English"
 
-# Sidebar options for quitting assessment
+# Sidebar options for quitting assessment and navigation
 if st.session_state.flow_state in ["chatting", "summary"]:
     st.sidebar.header("Options")
+    if st.session_state.flow_state == "chatting" and st.session_state.current_q_index > 0:
+        if st.sidebar.button("⬅️ Previous Question", use_container_width=True):
+            st.session_state.current_q_index -= 1
+            while st.session_state.current_q_index > 0:
+                prev_q = QUESTIONS[st.session_state.current_q_index]
+                if prev_q["key"] == "drug_category_manual" and st.session_state.auto_category != "Others (Low Confidence)":
+                    st.session_state.current_q_index -= 1
+                elif prev_q["key"] == "physician_contact" and st.session_state.answers.get("physician_name") in ["None", "Unknown"]:
+                    st.session_state.current_q_index -= 1
+                else:
+                    break
+            rebuild_chat_history()
+            save_progress()
+            st.rerun()
     if st.sidebar.button("🚪 Quit Assessment", use_container_width=True):
         st.session_state.confirm_quit = True
         st.rerun()
@@ -729,10 +789,8 @@ if st.session_state.flow_state == "language_selection":
     if st.session_state.language:
         lang = st.session_state.language
         # Start Chat
-        welcome_msg = UI_TEXTS[lang]["welcome_msg"]
-        add_msg("assistant", welcome_msg)
-        add_msg("assistant", QUESTIONS[0]["text"][lang])
         st.session_state.flow_state = "chatting"
+        rebuild_chat_history()
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -776,58 +834,78 @@ elif st.session_state.flow_state == "chatting":
         label_text = current_q["label"].get(lang, current_q["label"]["English"])
         lang_code = LANG_CODES.get(lang, "en-US")
         
-        # Check if we are in confirmation/editing state for the current response
-        if "temp_response" in st.session_state and st.session_state.temp_response is not None:
+        # Display current answer if already answered (when patient went back)
+        is_answered = current_q["key"] in st.session_state.answers
+        if is_answered:
+            current_ans = st.session_state.answers_original.get(current_q["key"], "")
             st.markdown(f'<div class="glass-card">', unsafe_allow_html=True)
-            st.markdown(f"### 🔍 Confirm your response for: **{label_text}**")
+            st.markdown(f"📝 **Current response for {label_text}:** *{current_ans}*")
             
-            edited_response = st.text_area(
-                "You can edit the text manually before confirming:",
-                value=st.session_state.temp_response,
-                key=f"edit_temp_{q_index}"
+            edited_val = st.text_input(
+                "Edit response manually:",
+                value=current_ans,
+                key=f"inline_edit_{q_index}"
             )
             
-            col_conf, col_cancel = st.columns(2)
-            with col_conf:
-                if st.button("✅ Confirm & Save", use_container_width=True, type="primary"):
-                    user_input = edited_response
-                    st.session_state.temp_response = None
-            with col_cancel:
-                if st.button("🔄 Cancel & Re-record", use_container_width=True):
-                    st.session_state.temp_response = None
+            col_save, col_next = st.columns(2)
+            with col_save:
+                if st.button("💾 Save Changes", use_container_width=True, type="primary", key=f"btn_save_inline_{q_index}"):
+                    user_input = edited_val
+            with col_next:
+                if st.button("➡️ Next Question", use_container_width=True, key=f"btn_next_inline_{q_index}"):
+                    if current_q["key"] == "physician_name" and st.session_state.answers.get("physician_name") in ["None", "Unknown"]:
+                        st.session_state.current_q_index += 2
+                    else:
+                        st.session_state.current_q_index += 1
+                    save_progress()
+                    rebuild_chat_history()
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            # Render Voice input and chat input together in a beautiful glass container
-            if HAS_SPEECH_RECOGNITION:
-                st.markdown(f"#### 🎙️ Record answer for: *{label_text}*")
-                audio_file = st.audio_input("Record voice / आवाज रेकॉर्ड करा", key=f"audio_input_{q_index}")
-            else:
-                st.info("🎙️ Voice input is temporarily disabled (missing dependency). Please type your response below.")
-                audio_file = None
-            
-            placeholder = UI_TEXTS[lang]["input_placeholder"].format(label=label_text)
-            chat_val = st.chat_input(placeholder)
-            
-            # Process voice recording input
-            if audio_file:
-                with st.spinner("🎙️ Transcribing voice... / आवाज का अनुवाद हो रहा है..."):
-                    speech_text = transcribe_audio(audio_file, lang_code)
-                    if speech_text.startswith("Error:"):
-                        st.error(speech_text)
+
+        # Main Page 'Previous Question' button for easy navigation
+        if q_index > 0:
+            if st.button("⬅️ Previous Question", key=f"btn_prev_main_{q_index}", use_container_width=True):
+                st.session_state.current_q_index -= 1
+                while st.session_state.current_q_index > 0:
+                    prev_q = QUESTIONS[st.session_state.current_q_index]
+                    if prev_q["key"] == "drug_category_manual" and st.session_state.auto_category != "Others (Low Confidence)":
+                        st.session_state.current_q_index -= 1
+                    elif prev_q["key"] == "physician_contact" and st.session_state.answers.get("physician_name") in ["None", "Unknown"]:
+                        st.session_state.current_q_index -= 1
                     else:
-                        st.session_state.temp_response = speech_text
-                        st.rerun()
-                        
-            # Process keyboard text input
-            if chat_val:
-                st.session_state.temp_response = chat_val
+                        break
+                rebuild_chat_history()
+                save_progress()
                 st.rerun()
+
+        # Render voice input and chat input
+        if HAS_SPEECH_RECOGNITION:
+            rec_title = f"🎙️ Record answer for: *{label_text}*"
+            if is_answered:
+                rec_title = f"🎙️ Speak again / Re-record to replace answer:"
+            st.markdown(f"#### {rec_title}")
+            audio_file = st.audio_input("Record voice / आवाज रेकॉर्ड करा", key=f"audio_input_{q_index}")
+        else:
+            st.info("🎙️ Voice input is temporarily disabled (missing dependency). Please type your response below.")
+            audio_file = None
+        
+        placeholder = UI_TEXTS[lang]["input_placeholder"].format(label=label_text)
+        chat_val = st.chat_input(placeholder)
+        
+        # Process voice recording input
+        if audio_file:
+            with st.spinner("🎙️ Transcribing voice... / आवाज का अनुवाद हो रहा है..."):
+                speech_text = transcribe_audio(audio_file, lang_code)
+                if speech_text.startswith("Error:"):
+                    st.error(speech_text)
+                else:
+                    user_input = speech_text
+                    
+        # Process keyboard text input
+        if chat_val:
+            user_input = chat_val
         
         if user_input:
-            # Add user answer to chat
-            add_msg("user", user_input)
-            
             # Process and record answer
             val_original = user_input.strip()
             val_normalized = normalize_devanagari_numbers(val_original)
@@ -866,43 +944,27 @@ elif st.session_state.flow_state == "chatting":
                 st.session_state.answers_original[current_q["key"]] = val_original
                 st.session_state.current_q_index += 1
             
-            # Save progress in background
-            save_progress()
-            
-            # Confirmation Pattern (Original and translated display)
-            if val_translated != val_original and val_translated.lower() != val_original.lower():
-                display_val = f"{val_original} (English: {val_translated})"
-            else:
-                display_val = val_original
-                
-            conf_msg = f"**{q_index + 1}. {label_text}**\n{UI_TEXTS[lang]['you_said']}: {display_val}\n{UI_TEXTS[lang]['recorded']}"
-            add_msg("assistant", conf_msg)
-            
             # Auto-detect drug logic (Question 7: drug_name)
             if current_q["key"] == "drug_name":
                 detected = detect_drug_category(val_translated)
                 st.session_state.auto_category = detected
-                add_msg("assistant", UI_TEXTS[lang]["detected_category"].format(detected=detected))
                 
             # Next Question or Summary
             next_q_index = st.session_state.current_q_index
             if next_q_index < len(QUESTIONS):
                 next_q = QUESTIONS[next_q_index]
                 # CATEGORY DETECTION RULE:
-                # If the next question is drug_category_manual and category detection succeeded (not "Others (Low Confidence)"),
-                # automatically record the answer and skip the question without asking the user.
                 if next_q["key"] == "drug_category_manual" and st.session_state.auto_category != "Others (Low Confidence)":
                     st.session_state.answers["drug_category_manual"] = "Unknown"
                     st.session_state.answers_original["drug_category_manual"] = "Unknown"
                     st.session_state.current_q_index += 1
                     next_q_index = st.session_state.current_q_index
                     
-            if next_q_index < len(QUESTIONS):
-                next_q = QUESTIONS[next_q_index]
-                add_msg("assistant", next_q["text"][lang])
-            else:
+            if next_q_index >= len(QUESTIONS):
                 st.session_state.flow_state = "summary"
             
+            rebuild_chat_history()
+            save_progress()
             st.rerun()
             
 elif st.session_state.flow_state == "summary":
