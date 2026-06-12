@@ -4,3 +4,4 @@ plotly
 mysql-connector-python
 fpdf2
 SpeechRecognition
+gTTS

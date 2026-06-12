@@ -5,8 +5,12 @@ import requests
 import urllib.parse
 import base64
 import os
-from gtts import gTTS
 import io
+try:
+    from gtts import gTTS
+    HAS_GTTS = True
+except ImportError:
+    HAS_GTTS = False
 
 try:
     import speech_recognition as sr
@@ -19,6 +23,8 @@ from utils import detect_drug_category
 
 @st.cache_data(show_spinner=False)
 def get_question_audio(text, lang):
+    if not HAS_GTTS:
+        return None
     lang_map = {
         "English": "en",
         "Hindi": "hi",
