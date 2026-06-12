@@ -1101,11 +1101,39 @@ def generate_report_pdf(report_data):
     desc = str(desc).encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(180, 5, txt=desc, border=1)
     pdf.ln(4)
-    
-    # 5. Section D: Physician / Healthcare Professional Details
     print_section_header("4. ASSOCIATED PHYSICIAN DETAILS")
-    print_row("Physician Name", report_data.get('physician_name'), "Physician Contact", report_data.get('physician_contact'))
-    pdf.ln(15)
+    
+    # Custom layout for Physician details to prevent overlap, handle long text, and wrap gracefully
+    phys_name = report_data.get('physician_name')
+    phys_contact = report_data.get('physician_contact')
+    
+    safe_name = str(phys_name) if phys_name is not None and phys_name != "" else "N/A"
+    safe_name = safe_name.encode('latin-1', 'replace').decode('latin-1')
+    
+    safe_contact = str(phys_contact) if phys_contact is not None and phys_contact != "" else "N/A"
+    safe_contact = safe_contact.encode('latin-1', 'replace').decode('latin-1')
+    
+    start_y = pdf.get_y()
+    
+    # Column 1: Physician Name (Left)
+    pdf.set_xy(15, start_y)
+    pdf.set_font("Helvetica", style="B", size=9)
+    pdf.cell(28, 6, txt="Physician Name:", ln=False)
+    pdf.set_font("Helvetica", size=9)
+    pdf.multi_cell(57, 6, txt=safe_name)
+    end_y_name = pdf.get_y()
+    
+    # Column 2: Physician Contact (Right)
+    pdf.set_xy(105, start_y)
+    pdf.set_font("Helvetica", style="B", size=9)
+    pdf.cell(32, 6, txt="Physician Contact:", ln=False)
+    pdf.set_font("Helvetica", size=9)
+    pdf.multi_cell(58, 6, txt=safe_contact)
+    end_y_contact = pdf.get_y()
+    
+    # Reset Y position below the longest column, plus extra line padding
+    pdf.set_y(max(end_y_name, end_y_contact))
+    pdf.ln(10)
     
     # Footer Signatures
     pdf.set_draw_color(150, 150, 150)
