@@ -1113,22 +1113,38 @@ def generate_report_pdf(report_data):
     safe_contact = str(phys_contact) if phys_contact is not None and phys_contact != "" else "N/A"
     safe_contact = safe_contact.encode('latin-1', 'replace').decode('latin-1')
     
+    # Normalize physician name capitalization and common prefix typos (like "de." to "Dr.")
+    if safe_name not in ["N/A", "None", "Unknown", "None.", "Unknown."]:
+        name_clean = safe_name.strip()
+        name_lower = name_clean.lower()
+        if name_lower.startswith("de. "):
+            name_clean = "Dr. " + name_clean[4:]
+        elif name_lower.startswith("de "):
+            name_clean = "Dr. " + name_clean[3:]
+        elif name_lower.startswith("dr. "):
+            name_clean = "Dr. " + name_clean[4:]
+        elif name_lower.startswith("dr "):
+            name_clean = "Dr. " + name_clean[3:]
+        elif not name_lower.startswith("dr.") and not name_lower.startswith("dr "):
+            name_clean = "Dr. " + name_clean
+        safe_name = name_clean.title()
+        
     start_y = pdf.get_y()
     
     # Column 1: Physician Name (Left)
     pdf.set_xy(15, start_y)
     pdf.set_font("Helvetica", style="B", size=9)
-    pdf.cell(28, 6, txt="Physician Name:", ln=False)
+    pdf.cell(35, 6, txt="Physician Name:", ln=False)
     pdf.set_font("Helvetica", size=9)
-    pdf.multi_cell(57, 6, txt=safe_name)
+    pdf.multi_cell(55, 6, txt=safe_name)
     end_y_name = pdf.get_y()
     
     # Column 2: Physician Contact (Right)
     pdf.set_xy(105, start_y)
     pdf.set_font("Helvetica", style="B", size=9)
-    pdf.cell(32, 6, txt="Physician Contact:", ln=False)
+    pdf.cell(35, 6, txt="Physician Contact:", ln=False)
     pdf.set_font("Helvetica", size=9)
-    pdf.multi_cell(58, 6, txt=safe_contact)
+    pdf.multi_cell(55, 6, txt=safe_contact)
     end_y_contact = pdf.get_y()
     
     # Reset Y position below the longest column, plus extra line padding
