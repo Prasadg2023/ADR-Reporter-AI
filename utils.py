@@ -1,8 +1,10 @@
 from fpdf import FPDF
 import tempfile
 import os
-
 import re
+import streamlit as st
+from translations import TRANSLATIONS
+
 
 # Brand names mapping to generic names (focused on Indian clinical practice and commonly reported drugs)
 BRAND_TO_GENERIC = {
@@ -1017,8 +1019,80 @@ def detect_drug_category(drug_name):
         
     return best_category
 
-def generate_report_pdf(report_data):
+def render_common_sidebar(current_page):
+    """Renders a common sidebar with language switcher and dynamically updated page navigation."""
+    hide_nav_css = """
+    <style>
+    div[data-testid="stSidebarNav"] {
+        display: none !important;
+    }
+    </style>
+    """
+    st.markdown(hide_nav_css, unsafe_allow_html=True)
+    
+    # Initialize language if not set
+    if "language" not in st.session_state or not st.session_state.language:
+        st.session_state.language = "English"
+        
+    lang = st.session_state.language
+    
+    # Language selectbox in the sidebar
+    languages = ["English", "Hindi", "Marathi"]
+    default_idx = languages.index(lang) if lang in languages else 0
+    
+    st.sidebar.markdown("### 🌐 Language / भाषा")
+    selected_lang = st.sidebar.selectbox(
+        "Choose Language / भाषा चुनें / भाषा निवडा",
+        languages,
+        index=default_idx,
+        key="sidebar_language_selectbox",
+        label_visibility="collapsed"
+    )
+    
+    if selected_lang != lang:
+        st.session_state.language = selected_lang
+        # If a callback is registered to rebuild flow (like the chat history), execute it
+        if "rebuild_chat_callback" in st.session_state and st.session_state.rebuild_chat_callback:
+            st.session_state.rebuild_chat_callback()
+        st.rerun()
+        
+    st.sidebar.markdown("---")
+    
+    # Navigation Section
+    st.sidebar.markdown(f"### {TRANSLATIONS[selected_lang]['nav_header']}")
+    
+    # Page links. Highlight current page, and use width='stretch' to avoid deprecation warning
+    # Home
+    if current_page == "home":
+        st.sidebar.markdown(f"**🏠 {TRANSLATIONS[selected_lang]['nav_home']}**")
+    else:
+        if st.sidebar.button(f"🏠 {TRANSLATIONS[selected_lang]['nav_home']}", width="stretch", key="nav_home"):
+            st.switch_page("app.py")
+            
+    # Patient Assessment
+    if current_page == "reporter":
+        st.sidebar.markdown(f"**📝 {TRANSLATIONS[selected_lang]['nav_reporter']}**")
+    else:
+        if st.sidebar.button(f"📝 {TRANSLATIONS[selected_lang]['nav_reporter']}", width="stretch", key="nav_reporter"):
+            st.switch_page("pages/1_patient_reporter.py")
+            
+    # Dashboard
+    if current_page == "dashboard":
+        st.sidebar.markdown(f"**📊 {TRANSLATIONS[selected_lang]['nav_dashboard']}**")
+    else:
+        if st.sidebar.button(f"📊 {TRANSLATIONS[selected_lang]['nav_dashboard']}", width="stretch", key="nav_dashboard"):
+            st.switch_page("pages/2_dashboard.py")
+            
+    st.sidebar.markdown("---")
+
+def generate_report_pdf(report_data, lang=None):
     """Generates a highly structured, professional PDF file for an ADR report in WHO-PvPI format."""
+    if lang is None:
+        try:
+            lang = st.session_state.get("language", "English")
+        except Exception:
+            lang = "English"
+            
     pdf = FPDF()
     pdf.add_page()
     pdf.set_margins(15, 15, 15)
@@ -1028,19 +1102,43 @@ def generate_report_pdf(report_data):
     pdf.set_line_width(0.5)
     pdf.rect(10, 10, 190, 277)
     
+    # Attempt to load a Windows TrueType Unicode font to support Devanagari characters
+    font_family = "Helvetica"
+    font_loaded = False
+    
+    if lang in ["Hindi", "Marathi"]:
+        for f_name, path in [
+            ("Nirmala", r"C:\Windows\Fonts\nirmala.ttf"),
+            ("Mangal", r"C:\Windows\Fonts\mangal.ttf")
+        ]:
+            if os.path.exists(path):
+                try:
+                    pdf.add_font(f_name, style="", fname=path)
+                    bold_path = path.replace(".ttf", "b.ttf")
+                    if os.path.exists(bold_path):
+                        pdf.add_font(f_name, style="B", fname=bold_path)
+                    else:
+                        pdf.add_font(f_name, style="B", fname=path)
+                    
+                    font_family = f_name
+                    font_loaded = True
+                    break
+                except Exception:
+                    pass
+                    
     # Title Banner
     pdf.set_fill_color(33, 158, 188) # Premium teal color matching the app theme
     pdf.rect(15, 15, 180, 15, style='F')
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Helvetica", style="B", size=13)
-    pdf.cell(180, 15, txt="ADVERSE DRUG REACTION REPORT", ln=True, align='C')
+    pdf.set_font(font_family, style="B", size=13)
+    pdf.cell(180, 15, txt=TRANSLATIONS[lang]["pdf_doc_title"], ln=True, align='C')
     pdf.ln(5)
     
     pdf.set_text_color(0, 0, 0)
     
     # Helper functions to print section headers
     def print_section_header(title):
-        pdf.set_font("Helvetica", style="B", size=10)
+        pdf.set_font(font_family, style="B", size=10)
         pdf.set_fill_color(240, 240, 240)
         pdf.set_draw_color(200, 200, 200)
         pdf.cell(180, 8, txt=f" {title}", ln=True, fill=True, border='B')
@@ -1048,70 +1146,77 @@ def generate_report_pdf(report_data):
 
     # Helper function to print key-value rows side-by-side safely
     def print_row(label1, val1, label2=None, val2=None):
-        pdf.set_font("Helvetica", style="B", size=9)
-        pdf.cell(35, 7, txt=f"{label1}:", ln=False)
-        pdf.set_font("Helvetica", size=9)
+        pdf.set_font(font_family, style="B", size=9)
+        pdf.cell(42, 7, txt=f"{label1}:", ln=False)
+        pdf.set_font(font_family, size=9)
         
         safe_val1 = str(val1) if val1 is not None and val1 != "" else "N/A"
-        safe_val1 = safe_val1.encode('latin-1', 'replace').decode('latin-1')
-        
+        if not font_loaded:
+            safe_val1 = safe_val1.encode('latin-1', 'replace').decode('latin-1')
+            
         if label2:
-            pdf.cell(55, 7, txt=safe_val1, ln=False)
-            pdf.set_font("Helvetica", style="B", size=9)
-            pdf.cell(35, 7, txt=f"{label2}:", ln=False)
-            pdf.set_font("Helvetica", size=9)
+            pdf.cell(48, 7, txt=safe_val1, ln=False)
+            pdf.set_font(font_family, style="B", size=9)
+            pdf.cell(42, 7, txt=f"{label2}:", ln=False)
+            pdf.set_font(font_family, size=9)
             
             safe_val2 = str(val2) if val2 is not None and val2 != "" else "N/A"
-            safe_val2 = safe_val2.encode('latin-1', 'replace').decode('latin-1')
-            pdf.cell(55, 7, txt=safe_val2, ln=True)
+            if not font_loaded:
+                safe_val2 = safe_val2.encode('latin-1', 'replace').decode('latin-1')
+            pdf.cell(48, 7, txt=safe_val2, ln=True)
         else:
-            pdf.multi_cell(145, 7, txt=safe_val1)
+            pdf.multi_cell(138, 7, txt=safe_val1)
             pdf.set_x(15)
 
     # 1. Report Metadata
-    print_row("Report ID", report_data.get('report_id', 'New'), "Submission Date", report_data.get('submission_timestamp', 'N/A'))
+    print_row(TRANSLATIONS[lang]["pdf_lbl_report_id"], report_data.get('report_id', 'New'), TRANSLATIONS[lang]["pdf_lbl_submission_date"], report_data.get('submission_timestamp', 'N/A'))
     pdf.ln(2)
     
     # 2. Section A: Patient Information
-    print_section_header("1. PATIENT INFORMATION")
-    print_row("Patient Name", report_data.get('patient_name'), "Age / Gender", f"{report_data.get('age', 'N/A')} yrs / {report_data.get('gender', 'N/A')}")
-    print_row("Weight", f"{report_data.get('weight_kg', 'N/A')} kg" if report_data.get('weight_kg') else "N/A", "Mobile Number", report_data.get('patient_mobile'))
-    print_row("Email Address", report_data.get('patient_email'))
+    print_section_header(TRANSLATIONS[lang]["pdf_sec_patient"])
+    print_row(TRANSLATIONS[lang]["pdf_lbl_patient_name"], report_data.get('patient_name'), TRANSLATIONS[lang]["pdf_lbl_age_gender"], f"{report_data.get('age', 'N/A')} yrs / {report_data.get('gender', 'N/A')}")
+    print_row(TRANSLATIONS[lang]["pdf_lbl_weight"], f"{report_data.get('weight_kg', 'N/A')} kg" if report_data.get('weight_kg') else "N/A", TRANSLATIONS[lang]["pdf_lbl_mobile"], report_data.get('patient_mobile'))
+    print_row(TRANSLATIONS[lang]["pdf_lbl_email"], report_data.get('patient_email'))
     pdf.ln(4)
     
     # 3. Section B: Suspected Medicine Information
-    print_section_header("2. SUSPECTED DRUG(S) INFORMATION")
-    print_row("Drug Name", report_data.get('drug_name'), "Therapeutic Category", report_data.get('final_drug_category'))
-    print_row("Strength / Dose", report_data.get('strength'), "Frequency", report_data.get('frequency'))
-    print_row("Route of Admin", report_data.get('route_of_administration'), "Indication", report_data.get('indication'))
-    print_row("Batch Number", report_data.get('batch_number'), "Expiry Date", report_data.get('expiry_date'))
-    print_row("Date Started", report_data.get('medicine_start_date'), "Date Stopped", report_data.get('medicine_stop_date'))
+    print_section_header(TRANSLATIONS[lang]["pdf_sec_drug"])
+    print_row(TRANSLATIONS[lang]["pdf_lbl_drug_name"], report_data.get('drug_name'), TRANSLATIONS[lang]["pdf_lbl_category"], report_data.get('final_drug_category'))
+    print_row(TRANSLATIONS[lang]["pdf_lbl_strength"], report_data.get('strength'), TRANSLATIONS[lang]["pdf_lbl_frequency"], report_data.get('frequency'))
+    print_row(TRANSLATIONS[lang]["pdf_lbl_route"], report_data.get('route_of_administration'), TRANSLATIONS[lang]["pdf_lbl_indication"], report_data.get('indication'))
+    print_row(TRANSLATIONS[lang]["pdf_lbl_batch"], report_data.get('batch_number'), TRANSLATIONS[lang]["pdf_lbl_expiry"], report_data.get('expiry_date'))
+    print_row(TRANSLATIONS[lang]["pdf_lbl_date_started"], report_data.get('medicine_start_date'), TRANSLATIONS[lang]["pdf_lbl_date_stopped"], report_data.get('medicine_stop_date'))
     pdf.ln(4)
     
     # 4. Section C: Adverse Event Information
-    print_section_header("3. ADVERSE DRUG REACTION DETAILS")
-    print_row("Reaction Started", report_data.get('reaction_start_date'), "Reaction Ended", report_data.get('reaction_end_date'))
-    print_row("Action Taken", report_data.get('action_taken'))
+    print_section_header(TRANSLATIONS[lang]["pdf_sec_reaction"])
+    print_row(TRANSLATIONS[lang]["pdf_lbl_reaction_started"], report_data.get('reaction_start_date'), TRANSLATIONS[lang]["pdf_lbl_reaction_ended"], report_data.get('reaction_end_date'))
+    print_row(TRANSLATIONS[lang]["pdf_lbl_action_taken"], report_data.get('action_taken'))
     
     # Long text for reaction description
-    pdf.set_font("Helvetica", style="B", size=9)
-    pdf.cell(180, 6, txt="Adverse Reaction Description:", ln=True)
-    pdf.set_font("Helvetica", size=9)
+    pdf.set_font(font_family, style="B", size=9)
+    pdf.cell(180, 6, txt=TRANSLATIONS[lang]["pdf_lbl_reaction_desc"], ln=True)
+    pdf.set_font(font_family, size=9)
     desc = report_data.get('reaction_description', 'N/A')
-    desc = str(desc).encode('latin-1', 'replace').decode('latin-1')
+    if not font_loaded:
+        desc = str(desc).encode('latin-1', 'replace').decode('latin-1')
+    else:
+        desc = str(desc)
     pdf.multi_cell(180, 5, txt=desc, border=1)
     pdf.ln(4)
-    print_section_header("4. ASSOCIATED PHYSICIAN DETAILS")
+    print_section_header(TRANSLATIONS[lang]["pdf_sec_physician"])
     
     # Custom layout for Physician details to prevent overlap, handle long text, and wrap gracefully
     phys_name = report_data.get('physician_name')
     phys_contact = report_data.get('physician_contact')
     
     safe_name = str(phys_name) if phys_name is not None and phys_name != "" else "N/A"
-    safe_name = safe_name.encode('latin-1', 'replace').decode('latin-1')
+    if not font_loaded:
+        safe_name = safe_name.encode('latin-1', 'replace').decode('latin-1')
     
     safe_contact = str(phys_contact) if phys_contact is not None and phys_contact != "" else "N/A"
-    safe_contact = safe_contact.encode('latin-1', 'replace').decode('latin-1')
+    if not font_loaded:
+        safe_contact = safe_contact.encode('latin-1', 'replace').decode('latin-1')
     
     # Normalize physician name capitalization and common prefix typos (like "de." to "Dr.")
     if safe_name not in ["N/A", "None", "Unknown", "None.", "Unknown."]:
@@ -1133,17 +1238,17 @@ def generate_report_pdf(report_data):
     
     # Column 1: Physician Name (Left)
     pdf.set_xy(15, start_y)
-    pdf.set_font("Helvetica", style="B", size=9)
-    pdf.cell(35, 6, txt="Physician Name:", ln=False)
-    pdf.set_font("Helvetica", size=9)
+    pdf.set_font(font_family, style="B", size=9)
+    pdf.cell(35, 6, txt=f"{TRANSLATIONS[lang]['pdf_lbl_physician_name']}:", ln=False)
+    pdf.set_font(font_family, size=9)
     pdf.multi_cell(55, 6, txt=safe_name)
     end_y_name = pdf.get_y()
     
     # Column 2: Physician Contact (Right)
     pdf.set_xy(105, start_y)
-    pdf.set_font("Helvetica", style="B", size=9)
-    pdf.cell(35, 6, txt="Physician Contact:", ln=False)
-    pdf.set_font("Helvetica", size=9)
+    pdf.set_font(font_family, style="B", size=9)
+    pdf.cell(35, 6, txt=f"{TRANSLATIONS[lang]['pdf_lbl_physician_contact']}:", ln=False)
+    pdf.set_font(font_family, size=9)
     pdf.multi_cell(55, 6, txt=safe_contact)
     end_y_contact = pdf.get_y()
     
@@ -1156,11 +1261,11 @@ def generate_report_pdf(report_data):
     pdf.line(15, 260, 75, 260)
     pdf.line(135, 260, 195, 260)
     
-    pdf.set_font("Helvetica", style="I", size=8)
+    pdf.set_font(font_family, style="I", size=8)
     pdf.set_xy(15, 261)
-    pdf.cell(60, 5, txt="Reporter / Patient Signature", ln=False, align='C')
+    pdf.cell(60, 5, txt=TRANSLATIONS[lang]["pdf_lbl_signature_patient"], ln=False, align='C')
     pdf.set_xy(135, 261)
-    pdf.cell(60, 5, txt="Reviewing Pharmacist Signature", ln=True, align='C')
+    pdf.cell(60, 5, txt=TRANSLATIONS[lang]["pdf_lbl_signature_pharmacist"], ln=True, align='C')
     
     # Save to a temporary file
     temp_dir = tempfile.gettempdir()
@@ -1168,6 +1273,7 @@ def generate_report_pdf(report_data):
     pdf.output(file_path)
     
     return file_path
+
 
 MONTHS_MAP = {
     # English

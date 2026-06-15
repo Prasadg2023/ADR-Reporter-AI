@@ -20,7 +20,9 @@ except ImportError:
     HAS_SPEECH_RECOGNITION = False
 
 from database import insert_report
-from utils import detect_drug_category
+from utils import detect_drug_category, render_common_sidebar
+from translations import TRANSLATIONS
+
 
 @st.cache_data(show_spinner=False)
 def get_question_audio(text, lang):
@@ -167,8 +169,8 @@ QUESTIONS = [
         "label": {"English": "Email Address", "Hindi": "ईमेल पता", "Marathi": "ईमेल पत्ता"},
         "text": {
             "English": "What is the patient's email address? (Type 'skip' if not available)",
-            "Hindi": "मरीज का ईमेल पता क्या है? (यदि उपलब्ध न हो तो 'skip' लिखें)",
-            "Marathi": "रुग्णाचा ईमेल पत्ता काय आहे? (उपलब्ध नसल्यास 'skip' लिहा)"
+            "Hindi": "मरीज का ईमेल पता क्या है? (यदि उपलब्ध न हो तो 'छोड़ें' लिखें या बोलें)",
+            "Marathi": "रुग्णाचा ईमेल पत्ता काय आहे? (उपलब्ध नसल्यास 'वगळा' लिहा किंवा बोला)"
         }
     },
     {
@@ -176,8 +178,8 @@ QUESTIONS = [
         "label": {"English": "Mobile Number", "Hindi": "मोबाइल नंबर", "Marathi": "मोबाईल नंबर"},
         "text": {
             "English": "What is the patient's mobile number? (Type 'skip' if not available)",
-            "Hindi": "मरीज का मोबाइल नंबर क्या है? (यदि उपलब्ध न हो तो 'skip' लिखें)",
-            "Marathi": "रुग्णाचा मोबाईल नंबर काय आहे? (उपलब्ध नसल्यास 'skip' लिहा)"
+            "Hindi": "मरीज का मोबाइल नंबर क्या है? (यदि उपलब्ध न हो तो 'छोड़ें' लिखें या बोलें)",
+            "Marathi": "रुग्णाचा मोबाईल नंबर काय आहे? (उपलब्ध नसल्यास 'वगळा' लिहा किंवा बोला)"
         }
     },
     {
@@ -203,8 +205,8 @@ QUESTIONS = [
         "label": {"English": "Weight (kg)", "Hindi": "वजन (किग्रा)", "Marathi": "वजन (किग्रॅ)"},
         "text": {
             "English": "What is the patient's weight in kilograms? (Type 'skip' if not available)",
-            "Hindi": "मरीज का वजन किलोग्राम में कितना है? (यदि उपलब्ध न हो तो 'skip' लिखें)",
-            "Marathi": "रुग्णाचे वजन किलोग्राममध्ये किती आहे? (उपलब्ध नसल्यास 'skip' लिहा)"
+            "Hindi": "मरीज का वजन किलोग्राम में कितना है? (यदि उपलब्ध न हो तो 'छोड़ें' लिखें या बोलें)",
+            "Marathi": "रुग्णाचे वजन किलोग्राममध्ये किती आहे? (उपलब्ध नसल्यास 'वगळा' लिहा किंवा बोला)"
         }
     },
     {
@@ -239,8 +241,8 @@ QUESTIONS = [
         "label": {"English": "Medicine Stop Date", "Hindi": "दवा बंद करने की तिथि", "Marathi": "औषध बंद केल्याची तारीख"},
         "text": {
             "English": "When did the patient stop taking this medicine? (Type 'still taking' if applicable)",
-            "Hindi": "मरीज ने यह दवा लेना कब बंद किया? (यदि अभी भी ले रहे हैं तो 'still taking' लिखें)",
-            "Marathi": "रुग्णाने हे औषध घेणे कधी बंद केले? (अजूनही घेत असल्यास 'still taking' लिहा)"
+            "Hindi": "मरीज ने यह दवा लेना कब बंद किया? (यदि अभी भी ले रहे हैं तो 'अभी भी ले रहे हैं' लिखें या बोलें)",
+            "Marathi": "रुग्णाने हे औषध घेणे कधी बंद केले? (अजूनही घेत असल्यास 'अजूनही घेत आहे' लिहा किंवा बोला)"
         }
     },
     {
@@ -257,8 +259,8 @@ QUESTIONS = [
         "label": {"English": "Reaction End Date", "Hindi": "रिएक्शन समाप्त होने की तिथि", "Marathi": "रिएक्शन संपल्याची तारीख"},
         "text": {
             "English": "When did the reaction stop or resolve? (Type 'still ongoing' if applicable)",
-            "Hindi": "रिएक्शन कब बंद या ठीक हुआ? (यदि अभी भी जारी है तो 'still ongoing' लिखें)",
-            "Marathi": "रिएक्शन कधी थांबली किंवा बरी झाली? (अजूनही सुरू असल्यास 'still ongoing' लिहा)"
+            "Hindi": "रिएक्शन कब बंद या ठीक हुआ? (यदि अभी भी जारी है तो 'अभी भी जारी है' लिखें या बोलें)",
+            "Marathi": "रिएक्शन कधी थांबली किंवा बरी झाली? (अजूनही सुरू असल्यास 'अजूनही सुरू आहे' लिहा किंवा बोला)"
         }
     },
     {
@@ -275,8 +277,8 @@ QUESTIONS = [
         "label": {"English": "Drug Category", "Hindi": "दवा की श्रेणी", "Marathi": "औषधाचा वर्ग"},
         "text": {
             "English": "Do you know the category of this medicine? (e.g., Antibiotic, NSAID, Antiallergic. Type 'skip' to use auto-detected)",
-            "Hindi": "क्या आप इस दवा की श्रेणी जानते हैं? (जैसे: एंटीबायोटिक, दर्दनिवारक, एलर्जी की दवा। स्वतः पहचान के लिए 'skip' लिखें)",
-            "Marathi": "तुम्हाला या औषधाचा वर्ग माहिती आहे का? (उदा. अँटीबायोटिक, पेनकिलर, अँटी-अॅलर्जिक. ऑटो-डिटेक्ट वापरण्यासाठी 'skip' लिहा)"
+            "Hindi": "क्या आप इस दवा की श्रेणी जानते हैं? (जैसे: एंटीबायोटिक, दर्दनिवारक, एलर्जी की दवा। स्वतः पहचान के लिए 'छोड़ें' लिखें या बोलें)",
+            "Marathi": "तुम्हाला या औषधाचा वर्ग माहिती आहे का? (उदा. अँटीबायोटिक, पेनकिलर, अँटी-अॅलर्जिक. ऑटो-डिटेक्ट वापरण्यासाठी 'वगळा' लिहा किंवा बोला)"
         }
     },
     {
@@ -293,8 +295,8 @@ QUESTIONS = [
         "label": {"English": "Strength", "Hindi": "दवा की क्षमता (डोज)", "Marathi": "औषधाची क्षमता (डोस)"},
         "text": {
             "English": "What was the strength or dose of the medicine? (e.g., 500mg, 10mg. Type 'skip' if not known)",
-            "Hindi": "दवा की खुराक या क्षमता क्या थी? (जैसे: 500mg, 10mg। न पता होने पर 'skip' लिखें)",
-            "Marathi": "औषधाचा डोस किंवा क्षमता काय होती? (उदा. 500mg, 10mg. माहिती नसल्यास 'skip' लिहा)"
+            "Hindi": "दवा की खुराक या क्षमता क्या थी? (जैसे: 500mg, 10mg। न पता होने पर 'छोड़ें' लिखें या बोलें)",
+            "Marathi": "औषधाचा डोस किंवा क्षमता काय होती? (उदा. 500mg, 10mg. माहिती नसल्यास 'वगळा' लिहा किंवा बोला)"
         }
     },
     {
@@ -302,8 +304,8 @@ QUESTIONS = [
         "label": {"English": "Frequency", "Hindi": "दवा लेने की आवृत्ति", "Marathi": "औषध घेण्याची वारंवारता"},
         "text": {
             "English": "How often was the medicine taken? (e.g., once a day, twice a day. Type 'skip' if not known)",
-            "Hindi": "दवा कितनी बार ली जाती थी? (जैसे: दिन में एक बार, दिन में दो बार। न पता होने पर 'skip' लिखें)",
-            "Marathi": "औषध किती वेळा घेतले जात होते? (उदा. दिवसातून एकदा, दिवसातून दोनदा. माहिती नसल्यास 'skip' लिहा)"
+            "Hindi": "दवा कितनी बार ली जाती थी? (जैसे: दिन में एक बार, दिन में दो बार। न पता होने पर 'छोड़ें' लिखें या बोलें)",
+            "Marathi": "औषध किती वेळा घेतले जात होते? (उदा. दिवसातून एकदा, दिवसातून दोनदा. माहिती नसल्यास 'वगळा' लिहा किंवा बोला)"
         }
     },
     {
@@ -311,8 +313,8 @@ QUESTIONS = [
         "label": {"English": "Batch Number", "Hindi": "बैच संख्या", "Marathi": "बॅच नंबर"},
         "text": {
             "English": "Do you have the batch number of the medicine? (Type 'skip' if not available)",
-            "Hindi": "क्या आपके पास दवा का बैच नंबर है? (उपलब्ध न होने पर 'skip' लिखें)",
-            "Marathi": "तुमच्याकडे औषधाचा बॅच नंबर आहे का? (उपलब्ध नसल्यास 'skip' लिहा)"
+            "Hindi": "क्या आपके पास दवा का बैच नंबर है? (उपलब्ध न होने पर 'छोड़ें' लिखें या बोलें)",
+            "Marathi": "तुमच्याकडे औषधाचा बॅच नंबर आहे का? (उपलब्ध नसल्यास 'वगळा' लिहा किंवा बोला)"
         }
     },
     {
@@ -320,8 +322,8 @@ QUESTIONS = [
         "label": {"English": "Expiry Date", "Hindi": "एक्सपायरी डेट", "Marathi": "एक्सपायरी तारीख"},
         "text": {
             "English": "What is the expiry date on the medicine package? (Type 'skip' if not available)",
-            "Hindi": "दवा के पैकेट पर एक्सपायरी डेट क्या है? (उपलब्ध न होने पर 'skip' लिखें)",
-            "Marathi": "औषधाच्या पॅकेटवर कालबाह्यता तारीख (एक्सपायरी डेट) काय आहे? (उपलब्ध नसल्यास 'skip' लिहा)"
+            "Hindi": "दवा के पैकेट पर एक्सपायरी डेट क्या है? (उपलब्ध न होने पर 'छोड़ें' लिखें या बोलें)",
+            "Marathi": "औषधाच्या पॅकेटवर कालबाह्यता तारीख (एक्सपायरी डेट) काय आहे? (उपलब्ध नसल्यास 'वगळा' लिहा किंवा बोला)"
         }
     },
     {
@@ -338,8 +340,8 @@ QUESTIONS = [
         "label": {"English": "Physician Name", "Hindi": "चिकित्सक का नाम", "Marathi": "डॉक्टरांचे नाव"},
         "text": {
             "English": "Is there any doctor or physician associated with this treatment? (Type 'no' or 'not sure' if skip)",
-            "Hindi": "क्या इस इलाज से जुड़ा कोई डॉक्टर या चिकित्सक है? (छोड़ने के लिए 'no' या 'not sure' लिखें)",
-            "Marathi": "या उपचाराशी संबंधित कोणताही डॉक्टर किंवा चिकित्सक आहे का? (वगळण्यासाठी 'no' किंवा 'not sure' लिहा)"
+            "Hindi": "क्या इस इलाज से जुड़ा कोई डॉक्टर या चिकित्सक है? (छोड़ने के लिए 'नहीं' या 'पता नहीं' लिखें या बोलें)",
+            "Marathi": "या उपचाराशी संबंधित कोणताही डॉक्टर किंवा चिकित्सक आहे का? (वगळण्यासाठी 'नाही' किंवा 'नक्की नाही' लिहा किंवा बोला)"
         }
     },
     {
@@ -347,64 +349,30 @@ QUESTIONS = [
         "label": {"English": "Physician Contact", "Hindi": "चिकित्सक का संपर्क", "Marathi": "डॉक्टरांचा संपर्क"},
         "text": {
             "English": "What is the contact number or email of the physician? (Type 'skip' if not available)",
-            "Hindi": "चिकित्सक का संपर्क नंबर या ईमेल क्या है? (उपलब्ध न होने पर 'skip' लिखें)",
-            "Marathi": "डॉक्टरांचा संपर्क क्रमांक किंवा ईमेल काय आहे? (उपलब्ध नसल्यास 'skip' लिहा)"
+            "Hindi": "चिकित्सक का संपर्क नंबर या ईमेल क्या है? (उपलब्ध न होने पर 'छोड़ें' लिखें या बोलें)",
+            "Marathi": "डॉक्टरांचा संपर्क क्रमांक किंवा ईमेल काय आहे? (उपलब्ध नसल्यास 'वगळा' लिहा किंवा बोला)"
         }
     }
 ]
 
 UI_TEXTS = {
-    "English": {
-        "welcome_title": "🗣️ Patient Reporter AI",
-        "tip_voice": "🎙️ *Tip: Record your voice using the widget below, or type your answer in the chat input.*",
-        "welcome_msg": "Hello! I am ADR Reporter AI. I will help you report an adverse drug reaction (a side effect from a medicine). I will ask you 22 simple questions. You can speak or type. Let us begin.",
-        "input_placeholder": "Your answer to: {label}...",
-        "recorded": "✅ Recorded",
-        "detected_category": "💡 Detected category: **{detected}**",
-        "summary_success": "You have answered all questions. Please review your report below.",
-        "field_col": "Field",
-        "answer_col": "Your Answer",
-        "english_col": "English Translation",
-        "btn_submit": "Submit Report",
-        "btn_restart": "Restart/Edit (Clears all data)",
-        "report_success": "Report Submitted Successfully! Thank you.",
-        "btn_new": "Start New Report",
-        "you_said": "You said"
-    },
-    "Hindi": {
-        "welcome_title": "🗣️ पेशेंट रिपोर्टर AI (मरीज रिपोर्टर)",
-        "tip_voice": "🎙️ *सुझाव: नीचे दिए गए वॉयस रिकॉर्डर का उपयोग करें, या चैट इनपुट में अपना उत्तर टाइप करें।*",
-        "welcome_msg": "नमस्ते! मैं ADR रिपोर्टर AI हूँ। मैं दवा के प्रतिकूल प्रभाव (साइड इफेक्ट) की रिपोर्ट करने में आपकी मदद करूँगा। मैं आपसे 22 आसान सवाल पूछूँगा। आप बोलकर या टाइप करके उत्तर दे सकते हैं। चलिए शुरू करते हैं।",
-        "input_placeholder": "{label} के लिए आपका उत्तर...",
-        "recorded": "✅ दर्ज किया गया",
-        "detected_category": "💡 खोजी गई श्रेणी: **{detected}**",
-        "summary_success": "आपने सभी सवालों के जवाब दे दिए हैं। कृपया नीचे दी गई अपनी रिपोर्ट की समीक्षा करें।",
-        "field_col": "विवरण",
-        "answer_col": "आपका उत्तर",
-        "english_col": "अंग्रेजी अनुवाद",
-        "btn_submit": "रिपोर्ट सबमिट करें",
-        "btn_restart": "पुनः आरंभ करें/संपादित करें (सभी डेटा हटा दिया जाएगा)",
-        "report_success": "रिपोर्ट सफलतापूर्वक सबमिट की गई! धन्यवाद।",
-        "btn_new": "नई रिपोर्ट शुरू करें",
-        "you_said": "आपने कहा"
-    },
-    "Marathi": {
-        "welcome_title": "🗣️ पेशंट रिपोर्टर AI (रुग्ण रिपोर्टर)",
-        "tip_voice": "🎙️ *टीप: खालील व्हॉइस रेकॉर्डर वापरा किंवा चॅट इनपुटमध्ये तुमचे उत्तर टाईप करा.*",
-        "welcome_msg": "नमस्कार! मी ADR रिपोर्टर AI आहे. औषधामुळे झालेल्या दुष्परिणामाची (रिएक्शन) नोंद करण्यास मी तुम्हाला मदत करेन. मी तुम्हाला २२ सोपे प्रश्न विचारीन. तुम्ही बोलून किंवा टाईप करून उत्तर देऊ शकता. चला तर मग सुरू करूया.",
-        "input_placeholder": "{label} साठी आपले उत्तर...",
-        "recorded": "✅ नोंदवले गेले",
-        "detected_category": "💡 शोधलेला औषध वर्ग: **{detected}**",
-        "summary_success": "तुम्ही सर्व प्रश्नांची उत्तरे दिली आहेत. कृपया खालील आपल्या अहवालाचे पुनरावलोकन करा.",
-        "field_col": "तपशील",
-        "answer_col": "तुमचे उत्तर",
-        "english_col": "इंग्रजी अनुवाद",
-        "btn_submit": "अहवाल सबमिट करा",
-        "btn_restart": "पुन्हा सुरू करा/दुरुस्त करा (सर्व डेटा नष्ट होईल)",
-        "report_success": "अहवाल यशस्वीरीत्या सादर केला गेला! धन्यवाद.",
-        "btn_new": "नवीन अहवाल सुरू करा",
-        "you_said": "तुम्ही म्हणालात"
-    }
+    l: {
+        "welcome_title": TRANSLATIONS[l]["rep_welcome_title"],
+        "tip_voice": TRANSLATIONS[l]["rep_tip_voice"],
+        "welcome_msg": TRANSLATIONS[l]["rep_welcome_msg"],
+        "input_placeholder": TRANSLATIONS[l]["rep_input_placeholder"],
+        "recorded": TRANSLATIONS[l]["rep_recorded"],
+        "detected_category": TRANSLATIONS[l]["rep_detected_category"],
+        "summary_success": TRANSLATIONS[l]["rep_summary_success"],
+        "field_col": TRANSLATIONS[l]["rep_field_col"],
+        "answer_col": TRANSLATIONS[l]["rep_answer_col"],
+        "english_col": TRANSLATIONS[l]["rep_english_col"],
+        "btn_submit": TRANSLATIONS[l]["rep_btn_submit"],
+        "btn_restart": TRANSLATIONS[l]["rep_btn_restart"],
+        "report_success": TRANSLATIONS[l]["rep_report_success"],
+        "btn_new": TRANSLATIONS[l]["rep_btn_new"],
+        "you_said": TRANSLATIONS[l]["rep_you_said"]
+    } for l in ["English", "Hindi", "Marathi"]
 }
 
 LANG_CODES = {

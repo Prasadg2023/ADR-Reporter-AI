@@ -2,18 +2,31 @@ import streamlit as st
 import base64
 import os
 from database import init_db
+from utils import render_common_sidebar
+from translations import TRANSLATIONS
+
+# Ensure language is initialized in session state
+if "language" not in st.session_state or not st.session_state.language:
+    st.session_state.language = "English"
+
+# Render the sidebar navigation
+render_common_sidebar("home")
+
+lang = st.session_state.language
+
+st.set_page_config(
+    page_title=TRANSLATIONS[lang]["app_title"],
+    page_icon="💊",
+    layout="centered"
+)
 
 # Initialize database on app startup
 try:
     init_db()
+    db_initialized = True
 except Exception as e:
-    st.error(f"Failed to initialize database: {e}")
-
-st.set_page_config(
-    page_title="ADR Reporter AI Configuration",
-    page_icon="💊",
-    layout="centered"
-)
+    db_initialized = False
+    st.error(TRANSLATIONS[lang]["app_db_error"].format(error=e))
 
 # --- BASE64 IMAGE LOADER ---
 def get_base64_image(image_path):
@@ -96,23 +109,25 @@ p, li, label, span, .stMarkdown p {{
 """
 st.markdown(css, unsafe_allow_html=True)
 
-st.title("💊 ADR Reporter AI Configuration")
+st.title(TRANSLATIONS[lang]["app_title"])
 
-st.markdown("""
+st.markdown(f"""
 <div class="glass-card">
-    <h3>Welcome to the Adverse Drug Reaction (ADR) Reporter AI System</h3>
-    <p>This intelligent assistant automates and manages patient report ingestion and clinical analysis.</p>
+    <h3>{TRANSLATIONS[lang]["app_welcome_heading"]}</h3>
+    <p>{TRANSLATIONS[lang]["app_welcome_subtext"]}</p>
     <hr style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 20px 0;">
-    <p>Please use the sidebar on the left to navigate between modules:</p>
+    <p>{TRANSLATIONS[lang]["app_welcome_instruction"]}</p>
     <ul style="padding-left: 20px; margin-bottom: 10px;">
         <li style="margin-bottom: 10px;">
-            <strong>📝 Patient Reporter:</strong> A conversational multilingual interface for patients to report adverse drug events step-by-step.
+            {TRANSLATIONS[lang]["app_desc_reporter"]}
         </li>
         <li style="margin-bottom: 10px;">
-            <strong>📊 Owner Dashboard:</strong> A comprehensive analytical dashboard for administrators to inspect, filter, and export collected ADR records.
+            {TRANSLATIONS[lang]["app_desc_dashboard"]}
         </li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
 
-st.info("Database initialized successfully. Ensure your MySQL server (e.g. XAMPP) is running.")
+if db_initialized:
+    st.info(TRANSLATIONS[lang]["app_db_success"])
+
