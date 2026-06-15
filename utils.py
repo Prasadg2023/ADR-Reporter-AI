@@ -1028,59 +1028,19 @@ def generate_report_pdf(report_data):
     pdf.set_line_width(0.5)
     pdf.rect(10, 10, 190, 277)
     
-    lang = "English"
-    try:
-        import streamlit as st
-        if "language" in st.session_state and st.session_state.language:
-            lang = st.session_state.language
-    except Exception:
-        pass
-
-    # Load translations for the PDF
-    from translations import PDF_TEXTS
-    pdf_texts = PDF_TEXTS.get(lang, PDF_TEXTS["English"])
-    
-    font_registered = False
-    if lang in ["Hindi", "Marathi"]:
-        # Try loading NotoSansDevanagari font
-        font_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "NotoSansDevanagari-Regular.ttf")
-        if not os.path.exists(font_path):
-            os.makedirs(os.path.dirname(font_path), exist_ok=True)
-            # Try to download NotoSans Devanagari from jsdelivr CDN
-            import urllib.request
-            try:
-                url = "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-devanagari/files/noto-sans-devanagari-devanagari-400-normal.ttf"
-                urllib.request.urlretrieve(url, font_path)
-            except Exception:
-                pass
-                
-        if os.path.exists(font_path):
-            try:
-                pdf.add_font('NotoSansDevanagari', '', font_path)
-                font_registered = True
-            except Exception:
-                pass
-
-    if font_registered:
-        font_family = "NotoSansDevanagari"
-        pdf_texts = PDF_TEXTS.get(lang, PDF_TEXTS["English"])
-    else:
-        font_family = "Helvetica"
-        pdf_texts = PDF_TEXTS["English"]
-        
     # Title Banner
     pdf.set_fill_color(33, 158, 188) # Premium teal color matching the app theme
     pdf.rect(15, 15, 180, 15, style='F')
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font(font_family, style="B" if font_family == "Helvetica" else "", size=13)
-    pdf.cell(180, 15, txt=pdf_texts["title"], ln=True, align='C')
+    pdf.set_font("Helvetica", style="B", size=13)
+    pdf.cell(180, 15, txt="ADVERSE DRUG REACTION REPORT", ln=True, align='C')
     pdf.ln(5)
     
     pdf.set_text_color(0, 0, 0)
     
     # Helper functions to print section headers
     def print_section_header(title):
-        pdf.set_font(font_family, style="B" if font_family == "Helvetica" else "", size=10)
+        pdf.set_font("Helvetica", style="B", size=10)
         pdf.set_fill_color(240, 240, 240)
         pdf.set_draw_color(200, 200, 200)
         pdf.cell(180, 8, txt=f" {title}", ln=True, fill=True, border='B')
@@ -1088,75 +1048,70 @@ def generate_report_pdf(report_data):
 
     # Helper function to print key-value rows side-by-side safely
     def print_row(label1, val1, label2=None, val2=None):
-        pdf.set_font(font_family, style="B" if font_family == "Helvetica" else "", size=9)
+        pdf.set_font("Helvetica", style="B", size=9)
         pdf.cell(35, 7, txt=f"{label1}:", ln=False)
-        pdf.set_font(font_family, style="" if font_family == "Helvetica" else "", size=9)
+        pdf.set_font("Helvetica", size=9)
         
         safe_val1 = str(val1) if val1 is not None and val1 != "" else "N/A"
-        if font_family == "Helvetica":
-            safe_val1 = safe_val1.encode('latin-1', 'replace').decode('latin-1')
+        safe_val1 = safe_val1.encode('latin-1', 'replace').decode('latin-1')
         
         if label2:
             pdf.cell(55, 7, txt=safe_val1, ln=False)
-            pdf.set_font(font_family, style="B" if font_family == "Helvetica" else "", size=9)
+            pdf.set_font("Helvetica", style="B", size=9)
             pdf.cell(35, 7, txt=f"{label2}:", ln=False)
-            pdf.set_font(font_family, style="" if font_family == "Helvetica" else "", size=9)
+            pdf.set_font("Helvetica", size=9)
             
             safe_val2 = str(val2) if val2 is not None and val2 != "" else "N/A"
-            if font_family == "Helvetica":
-                safe_val2 = safe_val2.encode('latin-1', 'replace').decode('latin-1')
+            safe_val2 = safe_val2.encode('latin-1', 'replace').decode('latin-1')
             pdf.cell(55, 7, txt=safe_val2, ln=True)
         else:
             pdf.multi_cell(145, 7, txt=safe_val1)
             pdf.set_x(15)
 
     # 1. Report Metadata
-    print_row(pdf_texts["label_report_id"], report_data.get('report_id', 'New'), pdf_texts["label_submission_date"], report_data.get('submission_timestamp', 'N/A'))
+    print_row("Report ID", report_data.get('report_id', 'New'), "Submission Date", report_data.get('submission_timestamp', 'N/A'))
     pdf.ln(2)
     
     # 2. Section A: Patient Information
-    print_section_header(pdf_texts["sec_patient"])
-    print_row(pdf_texts["label_patient_name"], report_data.get('patient_name'), pdf_texts["label_age_gender"], f"{report_data.get('age', 'N/A')} yrs / {report_data.get('gender', 'N/A')}")
-    print_row(pdf_texts["label_weight"], f"{report_data.get('weight_kg', 'N/A')} kg" if report_data.get('weight_kg') else "N/A", pdf_texts["label_mobile"], report_data.get('patient_mobile'))
-    print_row(pdf_texts["label_email"], report_data.get('patient_email'))
+    print_section_header("1. PATIENT INFORMATION")
+    print_row("Patient Name", report_data.get('patient_name'), "Age / Gender", f"{report_data.get('age', 'N/A')} yrs / {report_data.get('gender', 'N/A')}")
+    print_row("Weight", f"{report_data.get('weight_kg', 'N/A')} kg" if report_data.get('weight_kg') else "N/A", "Mobile Number", report_data.get('patient_mobile'))
+    print_row("Email Address", report_data.get('patient_email'))
     pdf.ln(4)
     
     # 3. Section B: Suspected Medicine Information
-    print_section_header(pdf_texts["sec_drug"])
-    print_row(pdf_texts["label_drug_name"], report_data.get('drug_name'), pdf_texts["label_category"], report_data.get('final_drug_category'))
-    print_row(pdf_texts["label_strength"], report_data.get('strength'), pdf_texts["label_frequency"], report_data.get('frequency'))
-    print_row(pdf_texts["label_route"], report_data.get('route_of_administration'), pdf_texts["label_indication"], report_data.get('indication'))
-    print_row(pdf_texts["label_batch"], report_data.get('batch_number'), pdf_texts["label_expiry"], report_data.get('expiry_date'))
-    print_row(pdf_texts["label_started"], report_data.get('medicine_start_date'), pdf_texts["label_stopped"], report_data.get('medicine_stop_date'))
+    print_section_header("2. SUSPECTED DRUG(S) INFORMATION")
+    print_row("Drug Name", report_data.get('drug_name'), "Therapeutic Category", report_data.get('final_drug_category'))
+    print_row("Strength / Dose", report_data.get('strength'), "Frequency", report_data.get('frequency'))
+    print_row("Route of Admin", report_data.get('route_of_administration'), "Indication", report_data.get('indication'))
+    print_row("Batch Number", report_data.get('batch_number'), "Expiry Date", report_data.get('expiry_date'))
+    print_row("Date Started", report_data.get('medicine_start_date'), "Date Stopped", report_data.get('medicine_stop_date'))
     pdf.ln(4)
     
     # 4. Section C: Adverse Event Information
-    print_section_header(pdf_texts["sec_reaction"])
-    print_row(pdf_texts["label_reaction_started"], report_data.get('reaction_start_date'), pdf_texts["label_reaction_ended"], report_data.get('reaction_end_date'))
-    print_row(pdf_texts["label_action_taken"], report_data.get('action_taken'))
+    print_section_header("3. ADVERSE DRUG REACTION DETAILS")
+    print_row("Reaction Started", report_data.get('reaction_start_date'), "Reaction Ended", report_data.get('reaction_end_date'))
+    print_row("Action Taken", report_data.get('action_taken'))
     
     # Long text for reaction description
-    pdf.set_font(font_family, style="B" if font_family == "Helvetica" else "", size=9)
-    pdf.cell(180, 6, txt=pdf_texts["label_description_hdr"], ln=True)
-    pdf.set_font(font_family, size=9)
+    pdf.set_font("Helvetica", style="B", size=9)
+    pdf.cell(180, 6, txt="Adverse Reaction Description:", ln=True)
+    pdf.set_font("Helvetica", size=9)
     desc = report_data.get('reaction_description', 'N/A')
-    if font_family == "Helvetica":
-        desc = str(desc).encode('latin-1', 'replace').decode('latin-1')
+    desc = str(desc).encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(180, 5, txt=desc, border=1)
     pdf.ln(4)
-    print_section_header(pdf_texts["sec_physician"])
+    print_section_header("4. ASSOCIATED PHYSICIAN DETAILS")
     
     # Custom layout for Physician details to prevent overlap, handle long text, and wrap gracefully
     phys_name = report_data.get('physician_name')
     phys_contact = report_data.get('physician_contact')
     
     safe_name = str(phys_name) if phys_name is not None and phys_name != "" else "N/A"
-    if font_family == "Helvetica":
-        safe_name = safe_name.encode('latin-1', 'replace').decode('latin-1')
+    safe_name = safe_name.encode('latin-1', 'replace').decode('latin-1')
     
     safe_contact = str(phys_contact) if phys_contact is not None and phys_contact != "" else "N/A"
-    if font_family == "Helvetica":
-        safe_contact = safe_contact.encode('latin-1', 'replace').decode('latin-1')
+    safe_contact = safe_contact.encode('latin-1', 'replace').decode('latin-1')
     
     # Normalize physician name capitalization and common prefix typos (like "de." to "Dr.")
     if safe_name not in ["N/A", "None", "Unknown", "None.", "Unknown."]:
@@ -1178,17 +1133,17 @@ def generate_report_pdf(report_data):
     
     # Column 1: Physician Name (Left)
     pdf.set_xy(15, start_y)
-    pdf.set_font(font_family, style="B" if font_family == "Helvetica" else "", size=9)
-    pdf.cell(35, 6, txt=f"{pdf_texts['label_physician_name']}:", ln=False)
-    pdf.set_font(font_family, size=9)
+    pdf.set_font("Helvetica", style="B", size=9)
+    pdf.cell(35, 6, txt="Physician Name:", ln=False)
+    pdf.set_font("Helvetica", size=9)
     pdf.multi_cell(55, 6, txt=safe_name)
     end_y_name = pdf.get_y()
     
     # Column 2: Physician Contact (Right)
     pdf.set_xy(105, start_y)
-    pdf.set_font(font_family, style="B" if font_family == "Helvetica" else "", size=9)
-    pdf.cell(35, 6, txt=f"{pdf_texts['label_physician_contact']}:", ln=False)
-    pdf.set_font(font_family, size=9)
+    pdf.set_font("Helvetica", style="B", size=9)
+    pdf.cell(35, 6, txt="Physician Contact:", ln=False)
+    pdf.set_font("Helvetica", size=9)
     pdf.multi_cell(55, 6, txt=safe_contact)
     end_y_contact = pdf.get_y()
     
@@ -1201,11 +1156,11 @@ def generate_report_pdf(report_data):
     pdf.line(15, 260, 75, 260)
     pdf.line(135, 260, 195, 260)
     
-    pdf.set_font(font_family, style="I" if font_family == "Helvetica" else "", size=8)
+    pdf.set_font("Helvetica", style="I", size=8)
     pdf.set_xy(15, 261)
-    pdf.cell(60, 5, txt=pdf_texts["sig_reporter"], ln=False, align='C')
+    pdf.cell(60, 5, txt="Reporter / Patient Signature", ln=False, align='C')
     pdf.set_xy(135, 261)
-    pdf.cell(60, 5, txt=pdf_texts["sig_pharmacist"], ln=True, align='C')
+    pdf.cell(60, 5, txt="Reviewing Pharmacist Signature", ln=True, align='C')
     
     # Save to a temporary file
     temp_dir = tempfile.gettempdir()

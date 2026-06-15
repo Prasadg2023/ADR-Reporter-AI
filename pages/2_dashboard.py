@@ -5,15 +5,8 @@ from database import get_all_reports, get_report_pdf, delete_report
 from utils import generate_report_pdf
 import os
 import base64
-from translations import DASHBOARD_TEXTS, NAV_TEXTS, COLUMNS_MAPPING
 
-# Initialize session state language
-if "language" not in st.session_state:
-    st.session_state.language = "English"
-
-lang = st.session_state.language
-
-st.set_page_config(page_title=DASHBOARD_TEXTS[lang]["page_title"], page_icon="📊", layout="wide")
+st.set_page_config(page_title="Owner Dashboard", page_icon="📊", layout="wide")
 
 # --- BASE64 IMAGE LOADER ---
 def get_base64_image(image_path):
@@ -79,48 +72,11 @@ p, li, label, span, .stMarkdown p {{
     backdrop-filter: blur(15px);
     border-right: 1px solid rgba(255, 255, 255, 0.08);
 }}
-
-/* Hide default Streamlit sidebar page links */
-[data-testid="stSidebarNav"] {{
-    display: none !important;
-}}
 </style>
 """
 st.markdown(css, unsafe_allow_html=True)
 
-# --- GLOBAL SIDEBAR NAVIGATION & LANGUAGE SELECTOR ---
-nav_data = NAV_TEXTS.get(lang, NAV_TEXTS["English"])
-st.sidebar.markdown(f"### {nav_data['nav_title']}")
-
-# Language selectbox
-languages = ["English", "Hindi", "Marathi"]
-lang_display = {
-    "English": "English",
-    "Hindi": "हिंदी (Hindi)",
-    "Marathi": "मराठी (Marathi)"
-}
-curr_idx = languages.index(lang) if lang in languages else 0
-selected_lang = st.sidebar.selectbox(
-    nav_data["select_lang"],
-    options=languages,
-    format_func=lambda x: lang_display[x],
-    index=curr_idx,
-    key="global_language_selector"
-)
-
-if selected_lang != lang:
-    st.session_state.language = selected_lang
-    st.rerun()
-
-# Sidebar Navigation buttons
-if st.sidebar.button(nav_data["home"], use_container_width=True):
-    st.switch_page("app.py")
-if st.sidebar.button(nav_data["patient_assessment"], use_container_width=True):
-    st.switch_page("pages/1_patient_reporter.py")
-if st.sidebar.button(nav_data["dashboard"], use_container_width=True):
-    st.switch_page("pages/2_dashboard.py")
-
-st.title(DASHBOARD_TEXTS[lang]["title"])
+st.title("📊 Owner Dashboard")
 
 def style_plotly_fig(fig):
     fig.update_layout(
@@ -210,27 +166,24 @@ def load_data():
 df = load_data()
 
 if df.empty:
-    st.info(DASHBOARD_TEXTS[lang]["load_err"])
+    st.info("No reports found in the database. Please submit a report first.")
     st.stop()
 
 # --- SIDEBAR FILTERS ---
-st.sidebar.header(DASHBOARD_TEXTS[lang]["filter_hdr"])
+st.sidebar.header("Filter Reports")
 
 # Date Filter
 min_date = df['submission_timestamp'].min().date() if not df.empty else None
 max_date = df['submission_timestamp'].max().date() if not df.empty else None
-date_range = st.sidebar.date_input(DASHBOARD_TEXTS[lang]["filter_date"], [min_date, max_date])
-
-# Category / Gender dynamic filter setup
-all_label = {"English": "All", "Hindi": "सभी", "Marathi": "सर्व"}.get(lang, "All")
+date_range = st.sidebar.date_input("Date Range", [min_date, max_date])
 
 # Category Filter
-categories = [all_label] + list(df['final_drug_category'].dropna().unique())
-selected_category = st.sidebar.selectbox(DASHBOARD_TEXTS[lang]["filter_category"], categories)
+categories = ["All"] + list(df['final_drug_category'].dropna().unique())
+selected_category = st.sidebar.selectbox("Drug Category", categories)
 
 # Gender Filter
-genders = [all_label] + list(df['gender'].dropna().unique())
-selected_gender = st.sidebar.selectbox(DASHBOARD_TEXTS[lang]["filter_gender"], genders)
+genders = ["All"] + list(df['gender'].dropna().unique())
+selected_gender = st.sidebar.selectbox("Gender", genders)
 
 # Apply Filters
 filtered_df = df.copy()
@@ -242,21 +195,21 @@ if len(date_range) == 2:
         (filtered_df['submission_timestamp'].dt.date <= end_date)
     ]
 
-if selected_category != all_label:
+if selected_category != "All":
     filtered_df = filtered_df[filtered_df['final_drug_category'] == selected_category]
     
-if selected_gender != all_label:
+if selected_gender != "All":
     filtered_df = filtered_df[filtered_df['gender'] == selected_gender]
 
 # --- METRICS ---
-st.markdown(f"### {DASHBOARD_TEXTS[lang]['metrics_hdr']}")
+st.markdown("### Key Metrics")
 col1, col2, col3 = st.columns(3)
-col1.metric(DASHBOARD_TEXTS[lang]["metric_total"], len(df))
-col2.metric(DASHBOARD_TEXTS[lang]["metric_filtered"], len(filtered_df))
-col3.metric(DASHBOARD_TEXTS[lang]["metric_top"], filtered_df['final_drug_category'].mode()[0] if not filtered_df.empty else "N/A")
+col1.metric("Total Reports", len(df))
+col2.metric("Filtered Reports", len(filtered_df))
+col3.metric("Top Category", filtered_df['final_drug_category'].mode()[0] if not filtered_df.empty else "N/A")
 
 # --- CHARTS ---
-st.markdown(f"### {DASHBOARD_TEXTS[lang]['analytics_hdr']}")
+st.markdown("### Analytics")
 c1, c2 = st.columns(2)
 
 with c1:
@@ -267,7 +220,7 @@ with c1:
             cat_counts, 
             names='Category', 
             values='Count', 
-            title=DASHBOARD_TEXTS[lang]["chart_cat_dist"],
+            title="Drug Category Distribution",
             color_discrete_sequence=px.colors.qualitative.Pastel
         )
         fig1.update_traces(textposition='inside', textinfo='percent+label')
@@ -282,7 +235,7 @@ with c2:
             gender_counts, 
             x='Gender', 
             y='Count', 
-            title=DASHBOARD_TEXTS[lang]["chart_gender_split"],
+            title="Gender Split",
             color='Gender',
             color_discrete_sequence=px.colors.qualitative.Plotly
         )
@@ -324,8 +277,8 @@ if not filtered_df.empty:
             x='MonthYear', 
             y='Count', 
             markers=True, 
-            title=DASHBOARD_TEXTS[lang]["chart_monthly_trend"],
-            labels={'MonthYear': DASHBOARD_TEXTS[lang]["chart_xaxis_trend"], 'Count': DASHBOARD_TEXTS[lang]["chart_yaxis_trend"]}
+            title="Monthly Trend of Reports",
+            labels={'MonthYear': 'Month-Year', 'Count': 'Number of Reports'}
         )
         
         # 6. Apply styled visual elements matching the glassmorphic dark theme
@@ -348,29 +301,24 @@ if not filtered_df.empty:
         st.plotly_chart(fig3, use_container_width=True)
 
 # --- DATA TABLE & EXPORTS ---
-st.markdown(f"### {DASHBOARD_TEXTS[lang]['detailed_hdr']}")
-
-# Rename columns according to language
-display_df = filtered_df.copy()
-mapping = COLUMNS_MAPPING.get(lang, COLUMNS_MAPPING["English"])
-display_df = display_df.rename(columns=mapping)
+st.markdown("### Detailed Reports")
 
 # Display the table with report_id visible and index hidden
-st.dataframe(display_df, hide_index=True)
+st.dataframe(filtered_df, hide_index=True)
 
 # Export CSV
 csv = filtered_df.to_csv(index=False).encode('utf-8')
 st.download_button(
-    label=DASHBOARD_TEXTS[lang]["btn_download_csv"],
+    label="📥 Download Filtered Data as CSV",
     data=csv,
     file_name='adr_reports.csv',
     mime='text/csv',
 )
 
 # Export PDF for a single report
-st.markdown(f"### {DASHBOARD_TEXTS[lang]['pdf_section_hdr']}")
+st.markdown("### Export / View Individual Report (PDF)")
 if not filtered_df.empty:
-    report_to_export = st.selectbox(DASHBOARD_TEXTS[lang]["pdf_select_report"], filtered_df['report_id'])
+    report_to_export = st.selectbox("Select Report to Export/View as PDF (by ID)", filtered_df['report_id'])
     
     try:
         pdf_bytes = get_report_pdf(report_to_export)
@@ -378,7 +326,7 @@ if not filtered_df.empty:
         if pdf_bytes:
             # Download Button
             st.download_button(
-                label=DASHBOARD_TEXTS[lang]["btn_download_pdf"].format(report_to_export=report_to_export),
+                label=f"📥 Download Report {report_to_export} PDF",
                 data=pdf_bytes,
                 file_name=f"ADR_Report_{report_to_export}.pdf",
                 mime="application/pdf",
@@ -388,45 +336,44 @@ if not filtered_df.empty:
             # View PDF Inline Preview
             base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
             pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-            with st.expander(DASHBOARD_TEXTS[lang]["expander_view_pdf"]):
+            with st.expander("👁️ View PDF in Dashboard"):
                 st.markdown(pdf_display, unsafe_allow_html=True)
         else:
-            st.error(DASHBOARD_TEXTS[lang]["pdf_fetch_err"])
+            st.error("Failed to retrieve PDF data.")
     except Exception as e:
-        st.error(DASHBOARD_TEXTS[lang]["pdf_gen_err"].format(e=e))
+        st.error(f"Failed to generate or retrieve PDF: {e}")
 
 # --- ADMINISTRATOR PANEL ---
-st.markdown(DASHBOARD_TEXTS[lang]["admin_hdr"])
-with st.expander(DASHBOARD_TEXTS[lang]["admin_expander"]):
+st.markdown("### 🗑️ Administrator Panel")
+with st.expander("Access Administrator Actions"):
     # Check for admin credentials (default to "admin")
     ADMIN_PASSWORD = "admin"
     if hasattr(st, "secrets") and "admin" in st.secrets:
         ADMIN_PASSWORD = st.secrets["admin"].get("password", ADMIN_PASSWORD)
         
-    admin_password = st.text_input(DASHBOARD_TEXTS[lang]["admin_password_label"], type="password", key="admin_pwd")
+    admin_password = st.text_input("Enter Administrator Password", type="password", key="admin_pwd")
     
     if admin_password == ADMIN_PASSWORD:
-        st.success(DASHBOARD_TEXTS[lang]["admin_success"])
+        st.success("Authorized Access")
         
         report_ids = df['report_id'].tolist() if not df.empty else []
         if report_ids:
-            report_to_delete = st.selectbox(DASHBOARD_TEXTS[lang]["admin_select_delete"], report_ids, key="delete_report_id")
+            report_to_delete = st.selectbox("Select Report ID to Delete", report_ids, key="delete_report_id")
             
             # Checkbox to prevent accidental deletions
-            confirm = st.checkbox(DASHBOARD_TEXTS[lang]["admin_confirm_delete"].format(report_to_delete=report_to_delete), key="confirm_delete")
+            confirm = st.checkbox(f"Confirm permanent deletion of Report ID {report_to_delete}", key="confirm_delete")
             
-            if st.button(DASHBOARD_TEXTS[lang]["admin_btn_delete"], type="primary", use_container_width=True):
+            if st.button("❌ Permanently Delete Report", type="primary", use_container_width=True):
                 if confirm:
                     if delete_report(report_to_delete):
-                        st.success(DASHBOARD_TEXTS[lang]["admin_delete_success"].format(report_to_delete=report_to_delete))
+                        st.success(f"Report ID {report_to_delete} deleted successfully!")
                         st.cache_data.clear()
                         st.rerun()
                     else:
-                        st.error(DASHBOARD_TEXTS[lang]["admin_delete_failed"])
+                        st.error("Failed to delete report from the database.")
                 else:
-                    st.warning(DASHBOARD_TEXTS[lang]["admin_delete_warn"])
+                    st.warning("Please check the confirmation box to proceed.")
         else:
-            st.info(DASHBOARD_TEXTS[lang]["admin_no_reports"])
+            st.info("No reports available to delete.")
     elif admin_password != "":
-        st.error(DASHBOARD_TEXTS[lang]["admin_error"])
-
+        st.error("Incorrect Password. Access Denied.")
