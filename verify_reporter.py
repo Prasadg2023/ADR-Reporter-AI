@@ -142,12 +142,8 @@ def test_flow():
     
     # Set answers directly in session state
     for k in questions_keys:
-        if k == "age":
-            at2.session_state.answers[k] = 30
-            at2.session_state.answers_original[k] = "30"
-        else:
-            at2.session_state.answers[k] = "Test Val"
-            at2.session_state.answers_original[k] = "Test Val"
+        at2.session_state.answers[k] = "Test Val"
+        at2.session_state.answers_original[k] = "Test Val"
     
     at2.session_state.current_q_index = 22
     at2.session_state.flow_state = "summary"
@@ -180,10 +176,7 @@ def test_flow():
         for el in at2:
             val = getattr(el, 'value', None)
             label = getattr(el, 'label', None)
-            try:
-                print(f"Element {type(el).__name__}: label={label}, value={val}")
-            except UnicodeEncodeError:
-                print(f"Element {type(el).__name__}: label={repr(label)}, value={repr(val)}")
+            print(f"Element {type(el).__name__}: label={label}, value={val}")
     assert at2.session_state.flow_state == "completed"
     # Progress file should be deleted
     assert not os.path.exists(prog_file)

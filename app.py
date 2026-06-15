@@ -2,16 +2,6 @@ import streamlit as st
 import base64
 import os
 from database import init_db
-from translations import get_text, render_sidebar_language_selector, init_language
-
-# Initialize language session state
-init_language()
-
-st.set_page_config(
-    page_title=get_text("app_title"),
-    page_icon="💊",
-    layout="centered"
-)
 
 # Initialize database on app startup
 try:
@@ -19,8 +9,11 @@ try:
 except Exception as e:
     st.error(f"Failed to initialize database: {e}")
 
-# Render the sidebar language selector
-render_sidebar_language_selector()
+st.set_page_config(
+    page_title="ADR Reporter AI Configuration",
+    page_icon="💊",
+    layout="centered"
+)
 
 # --- BASE64 IMAGE LOADER ---
 def get_base64_image(image_path):
@@ -103,30 +96,23 @@ p, li, label, span, .stMarkdown p {{
 """
 st.markdown(css, unsafe_allow_html=True)
 
-st.title(get_text("app_title"))
+st.title("💊 ADR Reporter AI Configuration")
 
-welcome_header = get_text("app_welcome_header")
-welcome_desc = get_text("app_welcome_desc")
-sidebar_desc = get_text("app_sidebar_desc")
-patient_reporter_bullet = get_text("app_patient_reporter_bullet")
-dashboard_bullet = get_text("app_dashboard_bullet")
-
-st.markdown(f"""
+st.markdown("""
 <div class="glass-card">
-    <h3>{welcome_header}</h3>
-    <p>{welcome_desc}</p>
+    <h3>Welcome to the Adverse Drug Reaction (ADR) Reporter AI System</h3>
+    <p>This intelligent assistant automates and manages patient report ingestion and clinical analysis.</p>
     <hr style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 20px 0;">
-    <p>{sidebar_desc}</p>
+    <p>Please use the sidebar on the left to navigate between modules:</p>
     <ul style="padding-left: 20px; margin-bottom: 10px;">
         <li style="margin-bottom: 10px;">
-            {patient_reporter_bullet}
+            <strong>📝 Patient Reporter:</strong> A conversational multilingual interface for patients to report adverse drug events step-by-step.
         </li>
         <li style="margin-bottom: 10px;">
-            {dashboard_bullet}
+            <strong>📊 Owner Dashboard:</strong> A comprehensive analytical dashboard for administrators to inspect, filter, and export collected ADR records.
         </li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
 
-st.info(get_text("app_db_success"))
-
+st.info("Database initialized successfully. Ensure your MySQL server (e.g. XAMPP) is running.")

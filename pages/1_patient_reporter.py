@@ -7,11 +7,6 @@ import urllib.parse
 import base64
 import os
 import io
-from translations import get_text, render_sidebar_language_selector, init_language, LANG_CODES, UI_TEXTS
-
-# Initialize language session state
-init_language()
-
 try:
     from gtts import gTTS
     HAS_GTTS = True
@@ -26,8 +21,6 @@ except ImportError:
 
 from database import insert_report
 from utils import detect_drug_category
-
-st.set_page_config(page_title=get_text("welcome_title"), page_icon="🗣️", layout="centered")
 
 @st.cache_data(show_spinner=False)
 def get_question_audio(text, lang):
@@ -58,6 +51,8 @@ def get_base64_image(image_path):
     except Exception:
         pass
     return ""
+
+st.set_page_config(page_title="Patient Reporter", page_icon="🗣️", layout="centered")
 
 # --- CUSTOM GLASSMORPHISM STYLES & BACKGROUND ---
 bg_base64 = get_base64_image("assets/pharma_background.png")
@@ -358,6 +353,66 @@ QUESTIONS = [
     }
 ]
 
+UI_TEXTS = {
+    "English": {
+        "welcome_title": "🗣️ Patient Reporter AI",
+        "tip_voice": "🎙️ *Tip: Record your voice using the widget below, or type your answer in the chat input.*",
+        "welcome_msg": "Hello! I am ADR Reporter AI. I will help you report an adverse drug reaction (a side effect from a medicine). I will ask you 22 simple questions. You can speak or type. Let us begin.",
+        "input_placeholder": "Your answer to: {label}...",
+        "recorded": "✅ Recorded",
+        "detected_category": "💡 Detected category: **{detected}**",
+        "summary_success": "You have answered all questions. Please review your report below.",
+        "field_col": "Field",
+        "answer_col": "Your Answer",
+        "english_col": "English Translation",
+        "btn_submit": "Submit Report",
+        "btn_restart": "Restart/Edit (Clears all data)",
+        "report_success": "Report Submitted Successfully! Thank you.",
+        "btn_new": "Start New Report",
+        "you_said": "You said"
+    },
+    "Hindi": {
+        "welcome_title": "🗣️ पेशेंट रिपोर्टर AI (मरीज रिपोर्टर)",
+        "tip_voice": "🎙️ *सुझाव: नीचे दिए गए वॉयस रिकॉर्डर का उपयोग करें, या चैट इनपुट में अपना उत्तर टाइप करें।*",
+        "welcome_msg": "नमस्ते! मैं ADR रिपोर्टर AI हूँ। मैं दवा के प्रतिकूल प्रभाव (साइड इफेक्ट) की रिपोर्ट करने में आपकी मदद करूँगा। मैं आपसे 22 आसान सवाल पूछूँगा। आप बोलकर या टाइप करके उत्तर दे सकते हैं। चलिए शुरू करते हैं।",
+        "input_placeholder": "{label} के लिए आपका उत्तर...",
+        "recorded": "✅ दर्ज किया गया",
+        "detected_category": "💡 खोजी गई श्रेणी: **{detected}**",
+        "summary_success": "आपने सभी सवालों के जवाब दे दिए हैं। कृपया नीचे दी गई अपनी रिपोर्ट की समीक्षा करें।",
+        "field_col": "विवरण",
+        "answer_col": "आपका उत्तर",
+        "english_col": "अंग्रेजी अनुवाद",
+        "btn_submit": "रिपोर्ट सबमिट करें",
+        "btn_restart": "पुनः आरंभ करें/संपादित करें (सभी डेटा हटा दिया जाएगा)",
+        "report_success": "रिपोर्ट सफलतापूर्वक सबमिट की गई! धन्यवाद।",
+        "btn_new": "नई रिपोर्ट शुरू करें",
+        "you_said": "आपने कहा"
+    },
+    "Marathi": {
+        "welcome_title": "🗣️ पेशंट रिपोर्टर AI (रुग्ण रिपोर्टर)",
+        "tip_voice": "🎙️ *टीप: खालील व्हॉइस रेकॉर्डर वापरा किंवा चॅट इनपुटमध्ये तुमचे उत्तर टाईप करा.*",
+        "welcome_msg": "नमस्कार! मी ADR रिपोर्टर AI आहे. औषधामुळे झालेल्या दुष्परिणामाची (रिएक्शन) नोंद करण्यास मी तुम्हाला मदत करेन. मी तुम्हाला २२ सोपे प्रश्न विचारीन. तुम्ही बोलून किंवा टाईप करून उत्तर देऊ शकता. चला तर मग सुरू करूया.",
+        "input_placeholder": "{label} साठी आपले उत्तर...",
+        "recorded": "✅ नोंदवले गेले",
+        "detected_category": "💡 शोधलेला औषध वर्ग: **{detected}**",
+        "summary_success": "तुम्ही सर्व प्रश्नांची उत्तरे दिली आहेत. कृपया खालील आपल्या अहवालाचे पुनरावलोकन करा.",
+        "field_col": "तपशील",
+        "answer_col": "तुमचे उत्तर",
+        "english_col": "इंग्रजी अनुवाद",
+        "btn_submit": "अहवाल सबमिट करा",
+        "btn_restart": "पुन्हा सुरू करा/दुरुस्त करा (सर्व डेटा नष्ट होईल)",
+        "report_success": "अहवाल यशस्वीरीत्या सादर केला गेला! धन्यवाद.",
+        "btn_new": "नवीन अहवाल सुरू करा",
+        "you_said": "तुम्ही म्हणालात"
+    }
+}
+
+LANG_CODES = {
+    "English": "en-US",
+    "Hindi": "hi-IN",
+    "Marathi": "mr-IN"
+}
+
 # --- SESSION STATE INITIALIZATION ---
 if "flow_state" not in st.session_state:
     st.session_state.flow_state = "language_selection" # language_selection, chatting, summary, completed
@@ -394,24 +449,13 @@ def save_progress():
 
 # Check and prompt to resume incomplete assessment if found
 if st.session_state.flow_state == "language_selection" and os.path.exists(PROGRESS_FILE):
-    # peek language to show prompt in correct language
-    peek_lang = "English"
-    try:
-        with open(PROGRESS_FILE, "r", encoding="utf-8") as peek_f:
-            peek_data = json.load(peek_f)
-            peek_lang = peek_data.get("language", "English")
-    except Exception:
-        pass
-    st.session_state.language = peek_lang
-    lang = peek_lang
-    
     st.markdown('<div class="glass-card" style="text-align: center;">', unsafe_allow_html=True)
-    st.markdown(f"### {get_text('resume_title')}")
-    st.markdown(f"<p style='font-size:14px; opacity:0.8;'>{get_text('resume_desc')}</p>", unsafe_allow_html=True)
+    st.markdown("### 🔄 Resume Previous Assessment?")
+    st.markdown("<p style='font-size:14px; opacity:0.8;'>We found an incomplete assessment from your last visit. Would you like to resume from where you left off?</p>", unsafe_allow_html=True)
     
     col_resume, col_new = st.columns(2)
     with col_resume:
-        if st.button(get_text("btn_resume_yes"), use_container_width=True, type="primary"):
+        if st.button("Yes, Resume Assessment", use_container_width=True, type="primary"):
             try:
                 with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
                     progress_data = json.load(f)
@@ -427,12 +471,11 @@ if st.session_state.flow_state == "language_selection" and os.path.exists(PROGRE
                 st.error(f"Failed to load progress: {e}")
                 
     with col_new:
-        if st.button(get_text("btn_resume_no"), use_container_width=True):
+        if st.button("No, Start New Assessment", use_container_width=True):
             try:
                 os.remove(PROGRESS_FILE)
             except Exception:
                 pass
-            st.session_state.language = "English"
             st.rerun()
             
     st.markdown('</div>', unsafe_allow_html=True)
@@ -678,13 +721,12 @@ def transcribe_audio(audio_file, language_code):
 
 # --- UI RENDER ---
 lang = st.session_state.language if st.session_state.language else "English"
-render_sidebar_language_selector()
 
 # Sidebar options for quitting assessment and navigation
 if st.session_state.flow_state in ["chatting", "summary"]:
-    st.sidebar.header(get_text("sidebar_options_header"))
+    st.sidebar.header("Options")
     if st.session_state.flow_state == "chatting" and st.session_state.current_q_index > 0:
-        if st.sidebar.button(get_text("btn_prev"), use_container_width=True):
+        if st.sidebar.button("⬅️ Previous Question", use_container_width=True):
             st.session_state.current_q_index -= 1
             while st.session_state.current_q_index > 0:
                 prev_q = QUESTIONS[st.session_state.current_q_index]
@@ -697,24 +739,24 @@ if st.session_state.flow_state in ["chatting", "summary"]:
             rebuild_chat_history()
             save_progress()
             st.rerun()
-    if st.sidebar.button(get_text("btn_quit"), use_container_width=True):
+    if st.sidebar.button("🚪 Quit Assessment", use_container_width=True):
         st.session_state.confirm_quit = True
         st.rerun()
 
 # Confirm Quit Assessment Dialog
 if st.session_state.get("confirm_quit", False):
     st.markdown('<div class="glass-card" style="text-align: center;">', unsafe_allow_html=True)
-    st.markdown(f"### {get_text('confirm_quit_title')}")
-    st.markdown(f"<p style='font-size:14px; opacity:0.8;'>{get_text('confirm_quit_desc')}</p>", unsafe_allow_html=True)
+    st.markdown("### ⚠️ Confirm Quit Assessment")
+    st.markdown("<p style='font-size:14px; opacity:0.8;'>Are you sure you want to quit? Your current progress will be saved so you can resume later.</p>", unsafe_allow_html=True)
     
     col_yes, col_no = st.columns(2)
     with col_yes:
-        if st.button(get_text("btn_quit_yes"), use_container_width=True, type="primary"):
+        if st.button("Yes, Quit & Save", use_container_width=True, type="primary"):
             save_progress()
             st.session_state.clear()
             st.rerun()
     with col_no:
-        if st.button(get_text("btn_quit_no"), use_container_width=True):
+        if st.button("No, Continue Assessment", use_container_width=True):
             st.session_state.confirm_quit = False
             st.rerun()
             
@@ -728,7 +770,7 @@ with col1:
     if os.path.exists("assets/pharmacist_avatar.png"):
         st.image("assets/pharmacist_avatar.png", use_container_width=True)
 with col2:
-    st.title(get_text("welcome_title"))
+    st.title(UI_TEXTS[lang]["welcome_title"])
 st.markdown('</div>', unsafe_allow_html=True)
 
 if st.session_state.flow_state == "language_selection":
@@ -797,20 +839,20 @@ elif st.session_state.flow_state == "chatting":
         if is_answered:
             current_ans = st.session_state.answers_original.get(current_q["key"], "")
             st.markdown(f'<div class="glass-card">', unsafe_allow_html=True)
-            st.markdown(get_text("current_response", label=label_text, ans=current_ans))
+            st.markdown(f"📝 **Current response for {label_text}:** *{current_ans}*")
             
             edited_val = st.text_input(
-                get_text("edit_response_manually"),
+                "Edit response manually:",
                 value=current_ans,
                 key=f"inline_edit_{q_index}"
             )
             
             col_save, col_next = st.columns(2)
             with col_save:
-                if st.button(get_text("btn_save_changes"), use_container_width=True, type="primary", key=f"btn_save_inline_{q_index}"):
+                if st.button("💾 Save Changes", use_container_width=True, type="primary", key=f"btn_save_inline_{q_index}"):
                     user_input = edited_val
             with col_next:
-                if st.button(get_text("btn_next_question"), use_container_width=True, key=f"btn_next_inline_{q_index}"):
+                if st.button("➡️ Next Question", use_container_width=True, key=f"btn_next_inline_{q_index}"):
                     if current_q["key"] == "physician_name" and st.session_state.answers.get("physician_name") in ["None", "Unknown"]:
                         st.session_state.current_q_index += 2
                     else:
@@ -822,7 +864,7 @@ elif st.session_state.flow_state == "chatting":
 
         # Main Page 'Previous Question' button for easy navigation
         if q_index > 0:
-            if st.button(get_text("btn_prev"), key=f"btn_prev_main_{q_index}", use_container_width=True):
+            if st.button("⬅️ Previous Question", key=f"btn_prev_main_{q_index}", use_container_width=True):
                 st.session_state.current_q_index -= 1
                 while st.session_state.current_q_index > 0:
                     prev_q = QUESTIONS[st.session_state.current_q_index]
@@ -838,21 +880,21 @@ elif st.session_state.flow_state == "chatting":
 
         # Render voice input and chat input
         if HAS_SPEECH_RECOGNITION:
-            rec_title = get_text("record_answer_for", label=label_text)
+            rec_title = f"🎙️ Record answer for: *{label_text}*"
             if is_answered:
-                rec_title = get_text("speak_again_to_replace")
+                rec_title = f"🎙️ Speak again / Re-record to replace answer:"
             st.markdown(f"#### {rec_title}")
-            audio_file = st.audio_input(get_text("audio_input_label"), key=f"audio_input_{q_index}")
+            audio_file = st.audio_input("Record voice / आवाज रेकॉर्ड करा", key=f"audio_input_{q_index}")
         else:
-            st.info(get_text("voice_input_disabled"))
+            st.info("🎙️ Voice input is temporarily disabled (missing dependency). Please type your response below.")
             audio_file = None
         
-        placeholder = get_text("input_placeholder", label=label_text)
+        placeholder = UI_TEXTS[lang]["input_placeholder"].format(label=label_text)
         chat_val = st.chat_input(placeholder)
         
         # Process voice recording input
         if audio_file:
-            with st.spinner(get_text("transcribing_voice")):
+            with st.spinner("🎙️ Transcribing voice... / आवाज का अनुवाद हो रहा है..."):
                 speech_text = transcribe_audio(audio_file, lang_code)
                 if speech_text.startswith("Error:"):
                     st.error(speech_text)
@@ -964,18 +1006,18 @@ elif st.session_state.flow_state == "summary":
     st.table(df)
     
     # Summary editing expander
-    with st.expander(get_text("edit_any_response")):
+    with st.expander("✏️ Edit any response"):
         edit_options = [q["label"].get(lang, q["label"]["English"]) for q in QUESTIONS]
-        selected_edit_label = st.selectbox(get_text("select_field_to_edit"), edit_options, key="select_edit_field")
+        selected_edit_label = st.selectbox("Select field to edit:", edit_options, key="select_edit_field")
         
         # Find corresponding question key
         selected_q = next(q for q in QUESTIONS if q["label"].get(lang, q["label"]["English"]) == selected_edit_label)
         key = selected_q["key"]
         
         current_val_orig = st.session_state.answers_original.get(key, "")
-        new_val_orig = st.text_input(get_text("new_response_for", label=selected_edit_label), value=current_val_orig, key=f"edit_input_{key}")
+        new_val_orig = st.text_input(f"New response for '{selected_edit_label}':", value=current_val_orig, key=f"edit_input_{key}")
         
-        if st.button(get_text("btn_save_changes"), use_container_width=True, key=f"save_edit_{key}"):
+        if st.button("💾 Save Changes", use_container_width=True, key=f"save_edit_{key}"):
             st.session_state.answers_original[key] = new_val_orig
             
             # Translate to English
@@ -1007,12 +1049,12 @@ elif st.session_state.flow_state == "summary":
             st.session_state.answers["final_drug_category"] = final_cat
             
             save_progress()
-            st.success(get_text("updated_successfully", label=selected_edit_label))
+            st.success(f"Updated '{selected_edit_label}' successfully!")
             st.rerun()
             
     col_sub, col_rest = st.columns(2)
     with col_sub:
-        if st.button(get_text("btn_submit"), type="primary", use_container_width=True):
+        if st.button(UI_TEXTS[lang]["btn_submit"], type="primary", use_container_width=True):
             # Save to DB
             success = insert_report(st.session_state.answers)
             if success:
@@ -1025,9 +1067,9 @@ elif st.session_state.flow_state == "summary":
                 st.session_state.flow_state = "completed"
                 st.rerun()
             else:
-                st.error(get_text("db_save_failed"))
+                st.error("Failed to save report. Please check database connection.")
     with col_rest:
-        if st.button(get_text("btn_restart"), use_container_width=True):
+        if st.button(UI_TEXTS[lang]["btn_restart"], use_container_width=True):
             # Delete progress file
             if os.path.exists(PROGRESS_FILE):
                 try:
@@ -1037,13 +1079,13 @@ elif st.session_state.flow_state == "summary":
             st.session_state.clear()
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
- 
+
 elif st.session_state.flow_state == "completed":
     st.markdown('<div class="glass-card" style="text-align: center;">', unsafe_allow_html=True)
     st.balloons()
     st.image("assets/pharmacist_avatar.png", width=120)
-    st.success(get_text("report_success"))
-    if st.button(get_text("btn_new"), use_container_width=True):
+    st.success(UI_TEXTS[lang]["report_success"])
+    if st.button(UI_TEXTS[lang]["btn_new"], use_container_width=True):
         st.session_state.clear()
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
