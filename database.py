@@ -27,6 +27,7 @@ except Exception:
     pass
 
 _use_sqlite = False
+_db_initialized = False
 
 def check_mysql_available():
     """Pings the MySQL server to detect if we should fallback to SQLite."""
@@ -62,6 +63,9 @@ def get_connection(use_db=True):
 
 def init_db():
     """Initializes the database and creates the reports table if it doesn't exist."""
+    global _db_initialized
+    if _db_initialized:
+        return
     check_mysql_available()
     
     if _use_sqlite:
@@ -101,6 +105,13 @@ def init_db():
             cursor.execute(create_table_query)
             conn.commit()
             
+            # Migration to add pdf_data column if it doesn't exist
+            cursor.execute("PRAGMA table_info(reports)")
+            columns = [info[1] for info in cursor.fetchall()]
+            if "pdf_data" not in columns:
+                cursor.execute("ALTER TABLE reports ADD COLUMN pdf_data BLOB")
+                conn.commit()
+            
             # Clean up categories / run migrations in SQLite
             migrations = [
                 "UPDATE reports SET final_drug_category = 'Beta-blockers' WHERE LOWER(final_drug_category) IN ('beta-blocker', 'beta-blockers', 'betabloker', 'betablocker')",
@@ -124,6 +135,7 @@ def init_db():
                 except Exception:
                     pass
             conn.commit()
+            _db_initialized = True
         except Exception as e:
             st.error(f"Error initializing SQLite DB: {e}")
         finally:
@@ -134,7 +146,7 @@ def init_db():
         conn = get_connection(use_db=False)
         if conn is None:
             return
-
+ 
         cursor = conn.cursor()
         try:
             cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
@@ -172,6 +184,13 @@ def init_db():
             cursor.execute(create_table_query)
             conn.commit()
             
+            # Migration to add pdf_data column if it doesn't exist
+            cursor.execute("SHOW COLUMNS FROM reports LIKE 'pdf_data'")
+            result = cursor.fetchone()
+            if not result:
+                cursor.execute("ALTER TABLE reports ADD COLUMN pdf_data LONGBLOB")
+                conn.commit()
+            
             migrations = [
                 "UPDATE reports SET final_drug_category = 'Beta-blockers' WHERE LOWER(final_drug_category) IN ('beta-blocker', 'beta-blockers', 'betabloker', 'betablocker')",
                 "UPDATE reports SET final_drug_category = 'NSAIDs' WHERE LOWER(final_drug_category) IN ('nsaid', 'nsaid / analgesic', 'nsaid/analgesic', 'nsaids')",
@@ -194,6 +213,7 @@ def init_db():
                 except Error:
                     pass
             conn.commit()
+            _db_initialized = True
         except Error as e:
             st.error(f"Error initializing MySQL database: {e}")
         finally:
@@ -201,8 +221,8 @@ def init_db():
             conn.close()
 
 def insert_report(report_data):
-    """Inserts a single report into the database."""
-    check_mysql_available()
+    """Inserts a single report into the database and generates/stores the associated PDF."""
+    init_db()
     
     fields = [
         "final_drug_category", "patient_name", "patient_email", "patient_mobile",
@@ -215,12 +235,33 @@ def insert_report(report_data):
     
     if _use_sqlite:
         conn = sqlite3.connect(SQLITE_DB_PATH)
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         placeholders = ", ".join(["?"] * len(fields))
         columns = ", ".join(fields)
         insert_query = f"INSERT INTO reports ({columns}) VALUES ({placeholders})"
         try:
             cursor.execute(insert_query, values)
+            report_id = cursor.lastrowid
+            
+            # Fetch back row to get generated/default fields (like submission_timestamp)
+            cursor.execute("SELECT * FROM reports WHERE report_id = ?", (report_id,))
+            row = cursor.fetchone()
+            if row:
+                row_dict = dict(row)
+                from utils import generate_report_pdf
+                try:
+                    pdf_path = generate_report_pdf(row_dict)
+                    with open(pdf_path, "rb") as f:
+                        pdf_bytes = f.read()
+                    cursor.execute("UPDATE reports SET pdf_data = ? WHERE report_id = ?", (pdf_bytes, report_id))
+                    try:
+                        os.remove(pdf_path)
+                    except Exception:
+                        pass
+                except Exception as pdf_err:
+                    st.error(f"Error generating PDF during insert: {pdf_err}")
+                    
             conn.commit()
             try:
                 st.cache_data.clear()
@@ -230,6 +271,12 @@ def insert_report(report_data):
         except Exception as e:
             try:
                 conn.rollback()
+            except Exception:
+                pass
+            import traceback
+            try:
+                with open("insert_error.log", "w") as err_f:
+                    traceback.print_exc(file=err_f)
             except Exception:
                 pass
             st.error(f"Error inserting report to SQLite: {e}")
@@ -242,12 +289,31 @@ def insert_report(report_data):
         if conn is None:
             return False
             
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         placeholders = ", ".join(["%s"] * len(fields))
         columns = ", ".join(fields)
         insert_query = f"INSERT INTO reports ({columns}) VALUES ({placeholders})"
         try:
             cursor.execute(insert_query, values)
+            report_id = cursor.lastrowid
+            
+            # Fetch back row
+            cursor.execute("SELECT * FROM reports WHERE report_id = %s", (report_id,))
+            row_dict = cursor.fetchone()
+            if row_dict:
+                from utils import generate_report_pdf
+                try:
+                    pdf_path = generate_report_pdf(row_dict)
+                    with open(pdf_path, "rb") as f:
+                        pdf_bytes = f.read()
+                    cursor.execute("UPDATE reports SET pdf_data = %s WHERE report_id = %s", (pdf_bytes, report_id))
+                    try:
+                        os.remove(pdf_path)
+                    except Exception:
+                        pass
+                except Exception as pdf_err:
+                    st.error(f"Error generating PDF during insert: {pdf_err}")
+            
             conn.commit()
             try:
                 st.cache_data.clear()
@@ -259,6 +325,12 @@ def insert_report(report_data):
                 conn.rollback()
             except Exception:
                 pass
+            import traceback
+            try:
+                with open("insert_error_mysql.log", "w") as err_f:
+                    traceback.print_exc(file=err_f)
+            except Exception:
+                pass
             st.error(f"Error inserting report to MySQL: {e}")
             return False
         finally:
@@ -266,15 +338,24 @@ def insert_report(report_data):
             conn.close()
 
 def get_all_reports():
-    """Fetches all reports from the database."""
-    check_mysql_available()
+    """Fetches all reports from the database, excluding pdf_data for performance."""
+    init_db()
+    
+    fields = [
+        "report_id", "submission_timestamp", "final_drug_category", "patient_name", "patient_email",
+        "patient_mobile", "age", "gender", "weight_kg", "drug_name", "indication",
+        "medicine_start_date", "medicine_stop_date", "reaction_start_date", "reaction_end_date",
+        "reaction_description", "drug_category_manual", "route_of_administration", "strength",
+        "frequency", "batch_number", "expiry_date", "action_taken", "physician_name", "physician_contact"
+    ]
+    columns_str = ", ".join(fields)
     
     if _use_sqlite:
         conn = sqlite3.connect(SQLITE_DB_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT * FROM reports ORDER BY report_id ASC")
+            cursor.execute(f"SELECT {columns_str} FROM reports ORDER BY report_id ASC")
             rows = cursor.fetchall()
             result = [dict(row) for row in rows]
             return result
@@ -291,12 +372,142 @@ def get_all_reports():
             
         cursor = conn.cursor(dictionary=True)
         try:
-            cursor.execute("SELECT * FROM reports ORDER BY report_id ASC")
+            cursor.execute(f"SELECT {columns_str} FROM reports ORDER BY report_id ASC")
             result = cursor.fetchall()
             return result
         except Error as e:
             st.error(f"Error fetching reports from MySQL: {e}")
             return []
+        finally:
+            cursor.close()
+            conn.close()
+
+def get_report_pdf(report_id):
+    """Fetches the PDF bytes for a report. Dynamically generates and stores it if missing."""
+    init_db()
+    
+    pdf_bytes = None
+    row_data = None
+    
+    if _use_sqlite:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT * FROM reports WHERE report_id = ?", (report_id,))
+            row = cursor.fetchone()
+            if row:
+                row_data = dict(row)
+                pdf_bytes = row_data.get('pdf_data')
+        except Exception as e:
+            st.error(f"Error fetching PDF from SQLite: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+    else:
+        conn = get_connection()
+        if conn is not None:
+            cursor = conn.cursor(dictionary=True)
+            try:
+                cursor.execute("SELECT * FROM reports WHERE report_id = %s", (report_id,))
+                row = cursor.fetchone()
+                if row:
+                    row_data = row
+                    pdf_bytes = row_data.get('pdf_data')
+            except Error as e:
+                st.error(f"Error fetching PDF from MySQL: {e}")
+            finally:
+                cursor.close()
+                conn.close()
+                
+    if pdf_bytes:
+        return pdf_bytes
+        
+    if row_data:
+        # Generate the PDF on the fly and save it to the database
+        from utils import generate_report_pdf
+        try:
+            row_data_copy = row_data.copy()
+            if 'pdf_data' in row_data_copy:
+                del row_data_copy['pdf_data']
+            pdf_path = generate_report_pdf(row_data_copy)
+            with open(pdf_path, "rb") as f:
+                pdf_bytes = f.read()
+            
+            # Save pdf_bytes to DB
+            if _use_sqlite:
+                conn = sqlite3.connect(SQLITE_DB_PATH)
+                cursor = conn.cursor()
+                try:
+                    cursor.execute("UPDATE reports SET pdf_data = ? WHERE report_id = ?", (pdf_bytes, report_id))
+                    conn.commit()
+                except Exception as e:
+                    st.error(f"Error saving generated PDF to SQLite: {e}")
+                finally:
+                    cursor.close()
+                    conn.close()
+            else:
+                conn = get_connection()
+                if conn is not None:
+                    cursor = conn.cursor()
+                    try:
+                        cursor.execute("UPDATE reports SET pdf_data = %s WHERE report_id = %s", (pdf_bytes, report_id))
+                        conn.commit()
+                    except Error as e:
+                        st.error(f"Error saving generated PDF to MySQL: {e}")
+                    finally:
+                        cursor.close()
+                        conn.close()
+                        
+            # Clean up temp file
+            try:
+                os.remove(pdf_path)
+            except Exception:
+                pass
+            return pdf_bytes
+        except Exception as e:
+            st.error(f"Error generating PDF dynamically: {e}")
+            
+    return None
+
+def delete_report(report_id):
+    """Deletes a report from the database by report_id."""
+    init_db()
+    
+    if _use_sqlite:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM reports WHERE report_id = ?", (report_id,))
+            conn.commit()
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
+            return True
+        except Exception as e:
+            st.error(f"Error deleting report from SQLite: {e}")
+            return False
+        finally:
+            cursor.close()
+            conn.close()
+    else:
+        conn = get_connection()
+        if conn is None:
+            return False
+            
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM reports WHERE report_id = %s", (report_id,))
+            conn.commit()
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
+            return True
+        except Error as e:
+            st.error(f"Error deleting report from MySQL: {e}")
+            return False
         finally:
             cursor.close()
             conn.close()

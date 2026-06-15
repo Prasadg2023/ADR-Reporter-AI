@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from database import get_all_reports
+from database import get_all_reports, get_report_pdf, delete_report
 from utils import generate_report_pdf
 import os
 import base64
@@ -316,23 +316,64 @@ st.download_button(
 )
 
 # Export PDF for a single report
-st.markdown("### Export Individual Report (PDF)")
+st.markdown("### Export / View Individual Report (PDF)")
 if not filtered_df.empty:
-    report_to_export = st.selectbox("Select Report to Export as PDF (by ID)", filtered_df['report_id'])
+    report_to_export = st.selectbox("Select Report to Export/View as PDF (by ID)", filtered_df['report_id'])
     
-    # Get specific report data
-    report_data = filtered_df[filtered_df['report_id'] == report_to_export].iloc[0].to_dict()
     try:
-        pdf_path = generate_report_pdf(report_data)
-        with open(pdf_path, "rb") as pdf_file:
-            pdf_bytes = pdf_file.read()
+        pdf_bytes = get_report_pdf(report_to_export)
         
-        st.download_button(
-            label=f"📥 Download Report {report_to_export} PDF",
-            data=pdf_bytes,
-            file_name=f"ADR_Report_{report_to_export}.pdf",
-            mime="application/pdf",
-            key=f"download_pdf_{report_to_export}"
-        )
+        if pdf_bytes:
+            # Download Button
+            st.download_button(
+                label=f"📥 Download Report {report_to_export} PDF",
+                data=pdf_bytes,
+                file_name=f"ADR_Report_{report_to_export}.pdf",
+                mime="application/pdf",
+                key=f"download_pdf_{report_to_export}"
+            )
+            
+            # View PDF Inline Preview
+            base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+            with st.expander("👁️ View PDF in Dashboard"):
+                st.markdown(pdf_display, unsafe_allow_html=True)
+        else:
+            st.error("Failed to retrieve PDF data.")
     except Exception as e:
-        st.error(f"Failed to generate PDF: {e}")
+        st.error(f"Failed to generate or retrieve PDF: {e}")
+
+# --- ADMINISTRATOR PANEL ---
+st.markdown("### 🗑️ Administrator Panel")
+with st.expander("Access Administrator Actions"):
+    # Check for admin credentials (default to "admin")
+    ADMIN_PASSWORD = "admin"
+    if hasattr(st, "secrets") and "admin" in st.secrets:
+        ADMIN_PASSWORD = st.secrets["admin"].get("password", ADMIN_PASSWORD)
+        
+    admin_password = st.text_input("Enter Administrator Password", type="password", key="admin_pwd")
+    
+    if admin_password == ADMIN_PASSWORD:
+        st.success("Authorized Access")
+        
+        report_ids = df['report_id'].tolist() if not df.empty else []
+        if report_ids:
+            report_to_delete = st.selectbox("Select Report ID to Delete", report_ids, key="delete_report_id")
+            
+            # Checkbox to prevent accidental deletions
+            confirm = st.checkbox(f"Confirm permanent deletion of Report ID {report_to_delete}", key="confirm_delete")
+            
+            if st.button("❌ Permanently Delete Report", type="primary", use_container_width=True):
+                if confirm:
+                    if delete_report(report_to_delete):
+                        st.success(f"Report ID {report_to_delete} deleted successfully!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error("Failed to delete report from the database.")
+                else:
+                    st.warning("Please check the confirmation box to proceed.")
+        else:
+            st.info("No reports available to delete.")
+    elif admin_password != "":
+        st.error("Incorrect Password. Access Denied.")
