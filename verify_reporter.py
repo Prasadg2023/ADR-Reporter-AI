@@ -29,8 +29,7 @@ def test_flow():
     print("Checking language selection...")
     assert at.session_state.flow_state == "language_selection"
     # Select English (which is the first button in the language select card)
-    english_btn = at.button[0]
-    assert english_btn.label == "English"
+    english_btn = at.button(label="English")[0]
     english_btn.click().run(timeout=10)
     
     # After selecting English, flow should change to chatting, and first question should be active
@@ -55,8 +54,7 @@ def test_flow():
     # 3. Test Navigation (Previous / Edit Previous Response)
     # Click "Previous Question" button to go back to Q1
     print("Clicking Previous Question...")
-    prev_btn = at.button[0] # The button that is rendered when index > 0
-    assert "Previous" in prev_btn.label
+    prev_btn = at.button(label="⬅️ Previous Question")[0]
     prev_btn.click().run(timeout=10)
     
     # Assert we are back to Q1 (index 0)
@@ -72,8 +70,7 @@ def test_flow():
     edit_input.set_value("Johnathan Doe").run(timeout=10)
     
     # Find the Save Changes button
-    save_changes_btn = at.button[0] # Save Changes button (since we render it inside column 1 of columns)
-    assert "Save Changes" in save_changes_btn.label
+    save_changes_btn = at.button(label="💾 Save Changes")[0]
     save_changes_btn.click().run(timeout=10)
     
     # Verify it updated and advanced to Q2
@@ -88,8 +85,7 @@ def test_flow():
 
     # 4. Test Quit Assessment and Save Progress
     # The sidebar buttons are accessed via at.sidebar
-    quit_btn = at.sidebar.button[1] # Quit button in sidebar
-    assert "Quit" in quit_btn.label
+    quit_btn = at.sidebar.button(label="🚪 Quit Assessment")[0]
     quit_btn.click().run(timeout=10)
     
     # Assert confirmation is shown
@@ -97,8 +93,7 @@ def test_flow():
     print("Quit confirmation dialog is active.")
     
     # Click Yes, Quit & Save
-    yes_quit_btn = at.button[0]
-    assert "Yes" in yes_quit_btn.label
+    yes_quit_btn = at.button(label="Yes, Quit & Save")[0]
     yes_quit_btn.click().run(timeout=10)
     
     # Assert session is cleared and progress file is written
@@ -119,8 +114,7 @@ def test_flow():
     at2.run(timeout=10)
     
     # Check that it asks to resume
-    resume_btn = at2.button[0]
-    assert "Resume" in resume_btn.label
+    resume_btn = at2.button(label="Yes, Resume Assessment")[0]
     resume_btn.click().run(timeout=10)
     
     # Verify we resumed successfully
@@ -154,8 +148,7 @@ def test_flow():
     print("Summary page renders correctly.")
     
     # Verify edit on summary page
-    save_edit_btn = at2.button[0] # The Save Changes button inside the expander
-    assert "Save" in save_edit_btn.label
+    save_edit_btn = at2.button(label="💾 Save Changes")[0] # The Save Changes button inside the expander
     
     # Edit the text input for patient_name (key is edit_input_patient_name)
     at2.text_input("edit_input_patient_name").set_value("Johnathan Edited Doe").run(timeout=10)
@@ -166,8 +159,7 @@ def test_flow():
     print("Editing responses from summary page works correctly.")
     
     # Verify Submission
-    submit_btn = at2.button[1] # Submit Report button
-    assert "Submit" in submit_btn.label
+    submit_btn = at2.button(label="Submit Report")[0] # Submit Report button
     submit_btn.click().run(timeout=10)
     
     # After submission, it should be in 'completed' state

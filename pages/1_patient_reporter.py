@@ -21,9 +21,18 @@ except ImportError:
 
 from database import insert_report
 from utils import detect_drug_category
+from translations import QUESTIONS, REPORTER_UI_TEXTS as UI_TEXTS, LANG_CODES, NAV_TEXTS
+
+# --- SESSION STATE INITIALIZATION ---
+if "flow_state" not in st.session_state:
+    st.session_state.flow_state = "language_selection" # language_selection, chatting, summary, completed
+if "language" not in st.session_state:
+    st.session_state.language = "English"
+
+lang = st.session_state.language
 
 @st.cache_data(show_spinner=False)
-def get_question_audio(text, lang):
+def get_question_audio(text, lang_name):
     if not HAS_GTTS:
         return None
     lang_map = {
@@ -31,7 +40,7 @@ def get_question_audio(text, lang):
         "Hindi": "hi",
         "Marathi": "mr"
     }
-    lang_code = lang_map.get(lang, "en")
+    lang_code = lang_map.get(lang_name, "en")
     try:
         tts = gTTS(text=text, lang=lang_code)
         fp = io.BytesIO()
@@ -52,7 +61,7 @@ def get_base64_image(image_path):
         pass
     return ""
 
-st.set_page_config(page_title="Patient Reporter", page_icon="🗣️", layout="centered")
+st.set_page_config(page_title=UI_TEXTS[lang]["welcome_title"], page_icon="🗣️", layout="centered")
 
 # --- CUSTOM GLASSMORPHISM STYLES & BACKGROUND ---
 bg_base64 = get_base64_image("assets/pharma_background.png")
@@ -147,277 +156,14 @@ h1, h2, h3, p, li, label, span, .stMarkdown p {{
     box-shadow: 0 6px 20px rgba(33, 158, 188, 0.5) !important;
 }}
 
+/* Hide default Streamlit sidebar page links */
+[data-testid="stSidebarNav"] {{
+    display: none !important;
+}}
 </style>
 """
 st.markdown(css, unsafe_allow_html=True)
 
-# --- DATA STRUCTURES (Multilingual) ---
-QUESTIONS = [
-    {
-        "key": "patient_name",
-        "label": {"English": "Patient Name", "Hindi": "मरीज का नाम", "Marathi": "रुग्णाचे नाव"},
-        "text": {
-            "English": "Please tell me the patient's full name.",
-            "Hindi": "कृपया मरीज का पूरा नाम बताएं।",
-            "Marathi": "कृपया रुग्णाचे पूर्ण नाव सांगा."
-        }
-    },
-    {
-        "key": "patient_email",
-        "label": {"English": "Email Address", "Hindi": "ईमेल पता", "Marathi": "ईमेल पत्ता"},
-        "text": {
-            "English": "What is the patient's email address? (Type 'skip' if not available)",
-            "Hindi": "मरीज का ईमेल पता क्या है? (यदि उपलब्ध न हो तो 'skip' लिखें)",
-            "Marathi": "रुग्णाचा ईमेल पत्ता काय आहे? (उपलब्ध नसल्यास 'skip' लिहा)"
-        }
-    },
-    {
-        "key": "patient_mobile",
-        "label": {"English": "Mobile Number", "Hindi": "मोबाइल नंबर", "Marathi": "मोबाईल नंबर"},
-        "text": {
-            "English": "What is the patient's mobile number? (Type 'skip' if not available)",
-            "Hindi": "मरीज का मोबाइल नंबर क्या है? (यदि उपलब्ध न हो तो 'skip' लिखें)",
-            "Marathi": "रुग्णाचा मोबाईल नंबर काय आहे? (उपलब्ध नसल्यास 'skip' लिहा)"
-        }
-    },
-    {
-        "key": "age",
-        "label": {"English": "Age", "Hindi": "उम्र", "Marathi": "वय"},
-        "text": {
-            "English": "How old is the patient?",
-            "Hindi": "मरीज की उम्र कितनी है?",
-            "Marathi": "रुग्णाचे वय किती आहे?"
-        }
-    },
-    {
-        "key": "gender",
-        "label": {"English": "Gender", "Hindi": "लिंग", "Marathi": "लिंग"},
-        "text": {
-            "English": "What is the patient's gender? (Male / Female / Other)",
-            "Hindi": "मरीज का लिंग क्या है? (पुरुष / महिला / अन्य)",
-            "Marathi": "रुग्णाचे लिंग काय आहे? (पुरुष / महिला / इतर)"
-        }
-    },
-    {
-        "key": "weight_kg",
-        "label": {"English": "Weight (kg)", "Hindi": "वजन (किग्रा)", "Marathi": "वजन (किग्रॅ)"},
-        "text": {
-            "English": "What is the patient's weight in kilograms? (Type 'skip' if not available)",
-            "Hindi": "मरीज का वजन किलोग्राम में कितना है? (यदि उपलब्ध न हो तो 'skip' लिखें)",
-            "Marathi": "रुग्णाचे वजन किलोग्राममध्ये किती आहे? (उपलब्ध नसल्यास 'skip' लिहा)"
-        }
-    },
-    {
-        "key": "drug_name",
-        "label": {"English": "Drug Name", "Hindi": "दवा का नाम", "Marathi": "औषधाचे नाव"},
-        "text": {
-            "English": "Which drug or medicine caused the reaction? Please type the name.",
-            "Hindi": "किस दवा के कारण रिएक्शन हुआ? कृपया नाम लिखें।",
-            "Marathi": "कोणत्या औषधामुळे ही रिएक्शन झाली? कृपया नाव लिहा."
-        }
-    },
-    {
-        "key": "indication",
-        "label": {"English": "Reason for Medicine", "Hindi": "दवा लेने का कारण", "Marathi": "औषध घेण्याचे कारण"},
-        "text": {
-            "English": "What was this medicine being used to treat? (What was the reason or indication for taking it?)",
-            "Hindi": "इस दवा का उपयोग किस बीमारी के इलाज के लिए किया जा रहा था? (इसे लेने का कारण क्या था?)",
-            "Marathi": "हे औषध कोणत्या आजाराच्या उपचारासाठी वापरले जात होते? (ते घेण्याचे कारण काय होते?)"
-        }
-    },
-    {
-        "key": "medicine_start_date",
-        "label": {"English": "Medicine Start Date", "Hindi": "दवा शुरू करने की तिथि", "Marathi": "औषध सुरू केल्याची तारीख"},
-        "text": {
-            "English": "When did the patient start taking this medicine? (e.g. DD/MM/YYYY)",
-            "Hindi": "मरीज ने यह दवा लेना कब शुरू किया था? (जैसे DD/MM/YYYY)",
-            "Marathi": "रुग्णाने हे औषध घेणे कधी सुरू केले? (उदा. DD/MM/YYYY)"
-        }
-    },
-    {
-        "key": "medicine_stop_date",
-        "label": {"English": "Medicine Stop Date", "Hindi": "दवा बंद करने की तिथि", "Marathi": "औषध बंद केल्याची तारीख"},
-        "text": {
-            "English": "When did the patient stop taking this medicine? (Type 'still taking' if applicable)",
-            "Hindi": "मरीज ने यह दवा लेना कब बंद किया? (यदि अभी भी ले रहे हैं तो 'still taking' लिखें)",
-            "Marathi": "रुग्णाने हे औषध घेणे कधी बंद केले? (अजूनही घेत असल्यास 'still taking' लिहा)"
-        }
-    },
-    {
-        "key": "reaction_start_date",
-        "label": {"English": "Reaction Start Date", "Hindi": "रिएक्शन शुरू होने की तिथि", "Marathi": "रिएक्शन सुरू झाल्याची तारीख"},
-        "text": {
-            "English": "When did the reaction or side effect start?",
-            "Hindi": "रिएक्शन या दुष्प्रभाव कब शुरू हुआ था?",
-            "Marathi": "रिएक्शन किंवा दुष्परिणाम कधी सुरू झाला?"
-        }
-    },
-    {
-        "key": "reaction_end_date",
-        "label": {"English": "Reaction End Date", "Hindi": "रिएक्शन समाप्त होने की तिथि", "Marathi": "रिएक्शन संपल्याची तारीख"},
-        "text": {
-            "English": "When did the reaction stop or resolve? (Type 'still ongoing' if applicable)",
-            "Hindi": "रिएक्शन कब बंद या ठीक हुआ? (यदि अभी भी जारी है तो 'still ongoing' लिखें)",
-            "Marathi": "रिएक्शन कधी थांबली किंवा बरी झाली? (अजूनही सुरू असल्यास 'still ongoing' लिहा)"
-        }
-    },
-    {
-        "key": "reaction_description",
-        "label": {"English": "Reaction Description", "Hindi": "रिएक्शन का विवरण", "Marathi": "रिएक्शनचे वर्णन"},
-        "text": {
-            "English": "Please describe the reaction or side effect in your own words. What exactly happened?",
-            "Hindi": "कृपया अपने शब्दों में रिएक्शन या दुष्प्रभाव का वर्णन करें। वास्तव में क्या हुआ था?",
-            "Marathi": "कृपया तुमच्या शब्दांत रिएक्शन किंवा दुष्परिणामाचे वर्णन करा. नक्की काय घडले?"
-        }
-    },
-    {
-        "key": "drug_category_manual",
-        "label": {"English": "Drug Category", "Hindi": "दवा की श्रेणी", "Marathi": "औषधाचा वर्ग"},
-        "text": {
-            "English": "Do you know the category of this medicine? (e.g., Antibiotic, NSAID, Antiallergic. Type 'skip' to use auto-detected)",
-            "Hindi": "क्या आप इस दवा की श्रेणी जानते हैं? (जैसे: एंटीबायोटिक, दर्दनिवारक, एलर्जी की दवा। स्वतः पहचान के लिए 'skip' लिखें)",
-            "Marathi": "तुम्हाला या औषधाचा वर्ग माहिती आहे का? (उदा. अँटीबायोटिक, पेनकिलर, अँटी-अॅलर्जिक. ऑटो-डिटेक्ट वापरण्यासाठी 'skip' लिहा)"
-        }
-    },
-    {
-        "key": "route_of_administration",
-        "label": {"English": "Route", "Hindi": "दवा लेने का मार्ग", "Marathi": "औषध घेण्याचा मार्ग"},
-        "text": {
-            "English": "How was this medicine taken? (e.g., by mouth, injection, skin patch)",
-            "Hindi": "यह दवा कैसे ली गई थी? (जैसे: मुंह से, इंजेक्शन, त्वचा पैच द्वारा)",
-            "Marathi": "हे औषध कसे घेतले गेले? (उदा. तोंडाद्वारे, इंजेक्शन, त्वचेवरील पॅच)"
-        }
-    },
-    {
-        "key": "strength",
-        "label": {"English": "Strength", "Hindi": "दवा की क्षमता (डोज)", "Marathi": "औषधाची क्षमता (डोस)"},
-        "text": {
-            "English": "What was the strength or dose of the medicine? (e.g., 500mg, 10mg. Type 'skip' if not known)",
-            "Hindi": "दवा की खुराक या क्षमता क्या थी? (जैसे: 500mg, 10mg। न पता होने पर 'skip' लिखें)",
-            "Marathi": "औषधाचा डोस किंवा क्षमता काय होती? (उदा. 500mg, 10mg. माहिती नसल्यास 'skip' लिहा)"
-        }
-    },
-    {
-        "key": "frequency",
-        "label": {"English": "Frequency", "Hindi": "दवा लेने की आवृत्ति", "Marathi": "औषध घेण्याची वारंवारता"},
-        "text": {
-            "English": "How often was the medicine taken? (e.g., once a day, twice a day. Type 'skip' if not known)",
-            "Hindi": "दवा कितनी बार ली जाती थी? (जैसे: दिन में एक बार, दिन में दो बार। न पता होने पर 'skip' लिखें)",
-            "Marathi": "औषध किती वेळा घेतले जात होते? (उदा. दिवसातून एकदा, दिवसातून दोनदा. माहिती नसल्यास 'skip' लिहा)"
-        }
-    },
-    {
-        "key": "batch_number",
-        "label": {"English": "Batch Number", "Hindi": "बैच संख्या", "Marathi": "बॅच नंबर"},
-        "text": {
-            "English": "Do you have the batch number of the medicine? (Type 'skip' if not available)",
-            "Hindi": "क्या आपके पास दवा का बैच नंबर है? (उपलब्ध न होने पर 'skip' लिखें)",
-            "Marathi": "तुमच्याकडे औषधाचा बॅच नंबर आहे का? (उपलब्ध नसल्यास 'skip' लिहा)"
-        }
-    },
-    {
-        "key": "expiry_date",
-        "label": {"English": "Expiry Date", "Hindi": "एक्सपायरी डेट", "Marathi": "एक्सपायरी तारीख"},
-        "text": {
-            "English": "What is the expiry date on the medicine package? (Type 'skip' if not available)",
-            "Hindi": "दवा के पैकेट पर एक्सपायरी डेट क्या है? (उपलब्ध न होने पर 'skip' लिखें)",
-            "Marathi": "औषधाच्या पॅकेटवर कालबाह्यता तारीख (एक्सपायरी डेट) काय आहे? (उपलब्ध नसल्यास 'skip' लिहा)"
-        }
-    },
-    {
-        "key": "action_taken",
-        "label": {"English": "Action Taken", "Hindi": "की गई कार्रवाई", "Marathi": "केलेली कारवाई"},
-        "text": {
-            "English": "What action was taken after the reaction? (e.g., medicine stopped, dose reduced, no action)",
-            "Hindi": "रिएक्शन के बाद क्या कार्रवाई की गई? (जैसे: दवा बंद कर दी गई, खुराक कम कर दी गई, कोई कार्रवाई नहीं की गई)",
-            "Marathi": "रिएक्शननंतर काय उपाययोजना केली गेली? (उदा. औषध बंद केले, डोस कमी केला, कोणतीही कारवाई केली नाही)"
-        }
-    },
-    {
-        "key": "physician_name",
-        "label": {"English": "Physician Name", "Hindi": "चिकित्सक का नाम", "Marathi": "डॉक्टरांचे नाव"},
-        "text": {
-            "English": "Is there any doctor or physician associated with this treatment? (Type 'no' or 'not sure' if skip)",
-            "Hindi": "क्या इस इलाज से जुड़ा कोई डॉक्टर या चिकित्सक है? (छोड़ने के लिए 'no' या 'not sure' लिखें)",
-            "Marathi": "या उपचाराशी संबंधित कोणताही डॉक्टर किंवा चिकित्सक आहे का? (वगळण्यासाठी 'no' किंवा 'not sure' लिहा)"
-        }
-    },
-    {
-        "key": "physician_contact",
-        "label": {"English": "Physician Contact", "Hindi": "चिकित्सक का संपर्क", "Marathi": "डॉक्टरांचा संपर्क"},
-        "text": {
-            "English": "What is the contact number or email of the physician? (Type 'skip' if not available)",
-            "Hindi": "चिकित्सक का संपर्क नंबर या ईमेल क्या है? (उपलब्ध न होने पर 'skip' लिखें)",
-            "Marathi": "डॉक्टरांचा संपर्क क्रमांक किंवा ईमेल काय आहे? (उपलब्ध नसल्यास 'skip' लिहा)"
-        }
-    }
-]
-
-UI_TEXTS = {
-    "English": {
-        "welcome_title": "🗣️ Patient Reporter AI",
-        "tip_voice": "🎙️ *Tip: Record your voice using the widget below, or type your answer in the chat input.*",
-        "welcome_msg": "Hello! I am ADR Reporter AI. I will help you report an adverse drug reaction (a side effect from a medicine). I will ask you 22 simple questions. You can speak or type. Let us begin.",
-        "input_placeholder": "Your answer to: {label}...",
-        "recorded": "✅ Recorded",
-        "detected_category": "💡 Detected category: **{detected}**",
-        "summary_success": "You have answered all questions. Please review your report below.",
-        "field_col": "Field",
-        "answer_col": "Your Answer",
-        "english_col": "English Translation",
-        "btn_submit": "Submit Report",
-        "btn_restart": "Restart/Edit (Clears all data)",
-        "report_success": "Report Submitted Successfully! Thank you.",
-        "btn_new": "Start New Report",
-        "you_said": "You said"
-    },
-    "Hindi": {
-        "welcome_title": "🗣️ पेशेंट रिपोर्टर AI (मरीज रिपोर्टर)",
-        "tip_voice": "🎙️ *सुझाव: नीचे दिए गए वॉयस रिकॉर्डर का उपयोग करें, या चैट इनपुट में अपना उत्तर टाइप करें।*",
-        "welcome_msg": "नमस्ते! मैं ADR रिपोर्टर AI हूँ। मैं दवा के प्रतिकूल प्रभाव (साइड इफेक्ट) की रिपोर्ट करने में आपकी मदद करूँगा। मैं आपसे 22 आसान सवाल पूछूँगा। आप बोलकर या टाइप करके उत्तर दे सकते हैं। चलिए शुरू करते हैं।",
-        "input_placeholder": "{label} के लिए आपका उत्तर...",
-        "recorded": "✅ दर्ज किया गया",
-        "detected_category": "💡 खोजी गई श्रेणी: **{detected}**",
-        "summary_success": "आपने सभी सवालों के जवाब दे दिए हैं। कृपया नीचे दी गई अपनी रिपोर्ट की समीक्षा करें।",
-        "field_col": "विवरण",
-        "answer_col": "आपका उत्तर",
-        "english_col": "अंग्रेजी अनुवाद",
-        "btn_submit": "रिपोर्ट सबमिट करें",
-        "btn_restart": "पुनः आरंभ करें/संपादित करें (सभी डेटा हटा दिया जाएगा)",
-        "report_success": "रिपोर्ट सफलतापूर्वक सबमिट की गई! धन्यवाद।",
-        "btn_new": "नई रिपोर्ट शुरू करें",
-        "you_said": "आपने कहा"
-    },
-    "Marathi": {
-        "welcome_title": "🗣️ पेशंट रिपोर्टर AI (रुग्ण रिपोर्टर)",
-        "tip_voice": "🎙️ *टीप: खालील व्हॉइस रेकॉर्डर वापरा किंवा चॅट इनपुटमध्ये तुमचे उत्तर टाईप करा.*",
-        "welcome_msg": "नमस्कार! मी ADR रिपोर्टर AI आहे. औषधामुळे झालेल्या दुष्परिणामाची (रिएक्शन) नोंद करण्यास मी तुम्हाला मदत करेन. मी तुम्हाला २२ सोपे प्रश्न विचारीन. तुम्ही बोलून किंवा टाईप करून उत्तर देऊ शकता. चला तर मग सुरू करूया.",
-        "input_placeholder": "{label} साठी आपले उत्तर...",
-        "recorded": "✅ नोंदवले गेले",
-        "detected_category": "💡 शोधलेला औषध वर्ग: **{detected}**",
-        "summary_success": "तुम्ही सर्व प्रश्नांची उत्तरे दिली आहेत. कृपया खालील आपल्या अहवालाचे पुनरावलोकन करा.",
-        "field_col": "तपशील",
-        "answer_col": "तुमचे उत्तर",
-        "english_col": "इंग्रजी अनुवाद",
-        "btn_submit": "अहवाल सबमिट करा",
-        "btn_restart": "पुन्हा सुरू करा/दुरुस्त करा (सर्व डेटा नष्ट होईल)",
-        "report_success": "अहवाल यशस्वीरीत्या सादर केला गेला! धन्यवाद.",
-        "btn_new": "नवीन अहवाल सुरू करा",
-        "you_said": "तुम्ही म्हणालात"
-    }
-}
-
-LANG_CODES = {
-    "English": "en-US",
-    "Hindi": "hi-IN",
-    "Marathi": "mr-IN"
-}
-
-# --- SESSION STATE INITIALIZATION ---
-if "flow_state" not in st.session_state:
-    st.session_state.flow_state = "language_selection" # language_selection, chatting, summary, completed
-if "language" not in st.session_state:
-    st.session_state.language = None
 if "current_q_index" not in st.session_state:
     st.session_state.current_q_index = 0
 if "answers" not in st.session_state:
@@ -450,16 +196,17 @@ def save_progress():
 # Check and prompt to resume incomplete assessment if found
 if st.session_state.flow_state == "language_selection" and os.path.exists(PROGRESS_FILE):
     st.markdown('<div class="glass-card" style="text-align: center;">', unsafe_allow_html=True)
-    st.markdown("### 🔄 Resume Previous Assessment?")
-    st.markdown("<p style='font-size:14px; opacity:0.8;'>We found an incomplete assessment from your last visit. Would you like to resume from where you left off?</p>", unsafe_allow_html=True)
+    st.markdown(UI_TEXTS[lang]["resume_title"])
+    st.markdown(UI_TEXTS[lang]["resume_msg"], unsafe_allow_html=True)
     
     col_resume, col_new = st.columns(2)
     with col_resume:
-        if st.button("Yes, Resume Assessment", use_container_width=True, type="primary"):
+        if st.button(UI_TEXTS[lang]["btn_resume_yes"], use_container_width=True, type="primary"):
             try:
                 with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
                     progress_data = json.load(f)
                 st.session_state.language = progress_data.get("language")
+                lang = st.session_state.language
                 st.session_state.current_q_index = progress_data.get("current_q_index", 0)
                 st.session_state.answers = progress_data.get("answers", {})
                 st.session_state.answers_original = progress_data.get("answers_original", {})
@@ -468,10 +215,10 @@ if st.session_state.flow_state == "language_selection" and os.path.exists(PROGRE
                 rebuild_chat_history()
                 st.rerun()
             except Exception as e:
-                st.error(f"Failed to load progress: {e}")
+                st.error(UI_TEXTS[lang]["resume_err"].format(e=e))
                 
     with col_new:
-        if st.button("No, Start New Assessment", use_container_width=True):
+        if st.button(UI_TEXTS[lang]["btn_resume_no"], use_container_width=True):
             try:
                 os.remove(PROGRESS_FILE)
             except Exception:
@@ -487,11 +234,11 @@ def add_msg(role, content):
 
 def rebuild_chat_history():
     st.session_state.chat_history = []
-    lang = st.session_state.language
-    if not lang:
+    lang_name = st.session_state.language
+    if not lang_name:
         return
-    st.session_state.chat_history.append({"role": "assistant", "content": UI_TEXTS[lang]["welcome_msg"]})
-    st.session_state.chat_history.append({"role": "assistant", "content": QUESTIONS[0]["text"][lang]})
+    st.session_state.chat_history.append({"role": "assistant", "content": UI_TEXTS[lang_name]["welcome_msg"]})
+    st.session_state.chat_history.append({"role": "assistant", "content": QUESTIONS[0]["text"][lang_name]})
     
     for i in range(st.session_state.current_q_index):
         q = QUESTIONS[i]
@@ -507,19 +254,19 @@ def rebuild_chat_history():
             
         st.session_state.chat_history.append({"role": "user", "content": orig})
         
-        label_text = q["label"].get(lang, q["label"]["English"])
+        label_text = q["label"].get(lang_name, q["label"]["English"])
         if trans != orig and trans.lower() != orig.lower():
             display_val = f"{orig} (English: {trans})"
         else:
             display_val = orig
-        conf_msg = f"**{i + 1}. {label_text}**\n{UI_TEXTS[lang]['you_said']}: {display_val}\n{UI_TEXTS[lang]['recorded']}"
+        conf_msg = f"**{i + 1}. {label_text}**\n{UI_TEXTS[lang_name]['you_said']}: {display_val}\n{UI_TEXTS[lang_name]['recorded']}"
         st.session_state.chat_history.append({"role": "assistant", "content": conf_msg})
         
         if q["key"] == "drug_name":
             detected = st.session_state.auto_category
             st.session_state.chat_history.append({
                 "role": "assistant",
-                "content": UI_TEXTS[lang]["detected_category"].format(detected=detected)
+                "content": UI_TEXTS[lang_name]["detected_category"].format(detected=detected)
             })
             
         next_i = i + 1
@@ -529,7 +276,7 @@ def rebuild_chat_history():
             next_i += 1
             
         if next_i < len(QUESTIONS) and next_i <= st.session_state.current_q_index:
-            st.session_state.chat_history.append({"role": "assistant", "content": QUESTIONS[next_i]["text"][lang]})
+            st.session_state.chat_history.append({"role": "assistant", "content": QUESTIONS[next_i]["text"][lang_name]})
 
 def translate_to_english(text):
     if not text:
@@ -705,7 +452,12 @@ def map_gender(val_translated, val_original):
 # --- PYTHON SPEECH RECOGNITION TRANSCRIBER ---
 def transcribe_audio(audio_file, language_code):
     if not HAS_SPEECH_RECOGNITION:
-        return "Error: Speech recognition library is not available on this server."
+        err_msg = {
+            "en-US": "Error: Speech recognition library is not available on this server.",
+            "hi-IN": "त्रुटि: स्पीच रिकग्निशन लाइब्रेरी इस सर्वर पर उपलब्ध नहीं है।",
+            "mr-IN": "त्रुटी: स्पीच रिकग्निशन लायब्ररी या सर्व्हरवर उपलब्ध नाही."
+        }
+        return err_msg.get(language_code, err_msg["en-US"])
     r = sr.Recognizer()
     try:
         with sr.AudioFile(audio_file) as source:
@@ -713,20 +465,64 @@ def transcribe_audio(audio_file, language_code):
             text = r.recognize_google(audio_data, language=language_code)
             return text.strip()
     except sr.UnknownValueError:
-        return "Error: Could not understand audio / आवाज समझ में नहीं आया।"
+        err_msg = {
+            "en-US": "Error: Could not understand audio.",
+            "hi-IN": "त्रुटि: आवाज समझ में नहीं आया।",
+            "mr-IN": "त्रुटी: आवाज समजला नाही."
+        }
+        return err_msg.get(language_code, err_msg["en-US"])
     except sr.RequestError as e:
-        return f"Error: Request failed; {e}"
+        err_msg = {
+            "en-US": f"Error: Request failed; {e}",
+            "hi-IN": f"त्रुटि: अनुरोध विफल रहा; {e}",
+            "mr-IN": f"त्रुटी: विनंती अयशस्वी झाली; {e}"
+        }
+        return err_msg.get(language_code, err_msg["en-US"])
     except Exception as e:
         return f"Error: {str(e)}"
 
 # --- UI RENDER ---
 lang = st.session_state.language if st.session_state.language else "English"
 
+# --- GLOBAL SIDEBAR NAVIGATION & LANGUAGE SELECTOR ---
+nav_data = NAV_TEXTS.get(lang, NAV_TEXTS["English"])
+st.sidebar.markdown(f"### {nav_data['nav_title']}")
+
+# Language selectbox
+languages = ["English", "Hindi", "Marathi"]
+lang_display = {
+    "English": "English",
+    "Hindi": "हिंदी (Hindi)",
+    "Marathi": "मराठी (Marathi)"
+}
+curr_idx = languages.index(lang) if lang in languages else 0
+selected_lang = st.sidebar.selectbox(
+    nav_data["select_lang"],
+    options=languages,
+    format_func=lambda x: lang_display[x],
+    index=curr_idx,
+    key="global_language_selector"
+)
+
+if selected_lang != lang:
+    st.session_state.language = selected_lang
+    rebuild_chat_history()
+    st.rerun()
+
+# Sidebar Navigation buttons
+if st.sidebar.button(nav_data["home"], use_container_width=True):
+    st.switch_page("app.py")
+if st.sidebar.button(nav_data["patient_assessment"], use_container_width=True):
+    st.switch_page("pages/1_patient_reporter.py")
+if st.sidebar.button(nav_data["dashboard"], use_container_width=True):
+    st.switch_page("pages/2_dashboard.py")
+
 # Sidebar options for quitting assessment and navigation
 if st.session_state.flow_state in ["chatting", "summary"]:
-    st.sidebar.header("Options")
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"### {UI_TEXTS[lang]['options_hdr']}")
     if st.session_state.flow_state == "chatting" and st.session_state.current_q_index > 0:
-        if st.sidebar.button("⬅️ Previous Question", use_container_width=True):
+        if st.sidebar.button(UI_TEXTS[lang]["btn_prev"], use_container_width=True, key="btn_prev_sidebar"):
             st.session_state.current_q_index -= 1
             while st.session_state.current_q_index > 0:
                 prev_q = QUESTIONS[st.session_state.current_q_index]
@@ -739,24 +535,24 @@ if st.session_state.flow_state in ["chatting", "summary"]:
             rebuild_chat_history()
             save_progress()
             st.rerun()
-    if st.sidebar.button("🚪 Quit Assessment", use_container_width=True):
+    if st.sidebar.button(UI_TEXTS[lang]["btn_quit"], use_container_width=True, key="btn_quit_sidebar"):
         st.session_state.confirm_quit = True
         st.rerun()
 
 # Confirm Quit Assessment Dialog
 if st.session_state.get("confirm_quit", False):
     st.markdown('<div class="glass-card" style="text-align: center;">', unsafe_allow_html=True)
-    st.markdown("### ⚠️ Confirm Quit Assessment")
-    st.markdown("<p style='font-size:14px; opacity:0.8;'>Are you sure you want to quit? Your current progress will be saved so you can resume later.</p>", unsafe_allow_html=True)
+    st.markdown(UI_TEXTS[lang]["quit_confirm_title"])
+    st.markdown(UI_TEXTS[lang]["quit_confirm_msg"], unsafe_allow_html=True)
     
     col_yes, col_no = st.columns(2)
     with col_yes:
-        if st.button("Yes, Quit & Save", use_container_width=True, type="primary"):
+        if st.button(UI_TEXTS[lang]["btn_quit_yes"], use_container_width=True, type="primary"):
             save_progress()
             st.session_state.clear()
             st.rerun()
     with col_no:
-        if st.button("No, Continue Assessment", use_container_width=True):
+        if st.button(UI_TEXTS[lang]["btn_quit_no"], use_container_width=True):
             st.session_state.confirm_quit = False
             st.rerun()
             
@@ -775,15 +571,15 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 if st.session_state.flow_state == "language_selection":
     st.markdown('<div class="glass-card" style="text-align: center;">', unsafe_allow_html=True)
-    st.markdown("### Which language would you prefer? / आप कौन सी भाषा पसंद करेंगे? / तुम्हाला कोणती भाषा आवडेल?")
-    st.markdown("<p style='font-size:14px; opacity:0.8;'>Please select a language to start the conversation with the assistant.</p>", unsafe_allow_html=True)
+    st.markdown(UI_TEXTS[lang]["lang_selection_title"])
+    st.markdown(UI_TEXTS[lang]["lang_selection_msg"], unsafe_allow_html=True)
     
     cols = st.columns(3)
-    if cols[0].button("English", use_container_width=True):
+    if cols[0].button("English", use_container_width=True, key="btn_lang_en"):
         st.session_state.language = "English"
-    if cols[1].button("Hindi / हिंदी", use_container_width=True):
+    if cols[1].button("Hindi / हिंदी", use_container_width=True, key="btn_lang_hi"):
         st.session_state.language = "Hindi"
-    if cols[2].button("Marathi / मराठी", use_container_width=True):
+    if cols[2].button("Marathi / मराठी", use_container_width=True, key="btn_lang_mr"):
         st.session_state.language = "Marathi"
         
     if st.session_state.language:
@@ -839,20 +635,20 @@ elif st.session_state.flow_state == "chatting":
         if is_answered:
             current_ans = st.session_state.answers_original.get(current_q["key"], "")
             st.markdown(f'<div class="glass-card">', unsafe_allow_html=True)
-            st.markdown(f"📝 **Current response for {label_text}:** *{current_ans}*")
+            st.markdown(UI_TEXTS[lang]["inline_current_response"].format(label_text=label_text, current_ans=current_ans))
             
             edited_val = st.text_input(
-                "Edit response manually:",
+                UI_TEXTS[lang]["inline_edit_label"],
                 value=current_ans,
                 key=f"inline_edit_{q_index}"
             )
             
             col_save, col_next = st.columns(2)
             with col_save:
-                if st.button("💾 Save Changes", use_container_width=True, type="primary", key=f"btn_save_inline_{q_index}"):
+                if st.button(UI_TEXTS[lang]["btn_save_changes"], use_container_width=True, type="primary", key=f"btn_save_inline_{q_index}"):
                     user_input = edited_val
             with col_next:
-                if st.button("➡️ Next Question", use_container_width=True, key=f"btn_next_inline_{q_index}"):
+                if st.button(UI_TEXTS[lang]["btn_next_question"], use_container_width=True, key=f"btn_next_inline_{q_index}"):
                     if current_q["key"] == "physician_name" and st.session_state.answers.get("physician_name") in ["None", "Unknown"]:
                         st.session_state.current_q_index += 2
                     else:
@@ -864,7 +660,7 @@ elif st.session_state.flow_state == "chatting":
 
         # Main Page 'Previous Question' button for easy navigation
         if q_index > 0:
-            if st.button("⬅️ Previous Question", key=f"btn_prev_main_{q_index}", use_container_width=True):
+            if st.button(UI_TEXTS[lang]["btn_prev"], key=f"btn_prev_main_{q_index}", use_container_width=True):
                 st.session_state.current_q_index -= 1
                 while st.session_state.current_q_index > 0:
                     prev_q = QUESTIONS[st.session_state.current_q_index]
@@ -880,13 +676,13 @@ elif st.session_state.flow_state == "chatting":
 
         # Render voice input and chat input
         if HAS_SPEECH_RECOGNITION:
-            rec_title = f"🎙️ Record answer for: *{label_text}*"
+            rec_title = UI_TEXTS[lang]["voice_record_title"].format(label_text=label_text)
             if is_answered:
-                rec_title = f"🎙️ Speak again / Re-record to replace answer:"
+                rec_title = UI_TEXTS[lang]["voice_record_replace"]
             st.markdown(f"#### {rec_title}")
-            audio_file = st.audio_input("Record voice / आवाज रेकॉर्ड करा", key=f"audio_input_{q_index}")
+            audio_file = st.audio_input(UI_TEXTS[lang]["audio_input_label"], key=f"audio_input_{q_index}")
         else:
-            st.info("🎙️ Voice input is temporarily disabled (missing dependency). Please type your response below.")
+            st.info(UI_TEXTS[lang]["voice_disabled_info"])
             audio_file = None
         
         placeholder = UI_TEXTS[lang]["input_placeholder"].format(label=label_text)
@@ -894,9 +690,9 @@ elif st.session_state.flow_state == "chatting":
         
         # Process voice recording input
         if audio_file:
-            with st.spinner("🎙️ Transcribing voice... / आवाज का अनुवाद हो रहा है..."):
+            with st.spinner(UI_TEXTS[lang]["voice_spinner"]):
                 speech_text = transcribe_audio(audio_file, lang_code)
-                if speech_text.startswith("Error:"):
+                if speech_text.startswith("Error:") or speech_text.startswith("त्रुटि:") or speech_text.startswith("त्रुटी:"):
                     st.error(speech_text)
                 else:
                     user_input = speech_text
@@ -1006,18 +802,18 @@ elif st.session_state.flow_state == "summary":
     st.table(df)
     
     # Summary editing expander
-    with st.expander("✏️ Edit any response"):
+    with st.expander(UI_TEXTS[lang]["edit_expander"]):
         edit_options = [q["label"].get(lang, q["label"]["English"]) for q in QUESTIONS]
-        selected_edit_label = st.selectbox("Select field to edit:", edit_options, key="select_edit_field")
+        selected_edit_label = st.selectbox(UI_TEXTS[lang]["edit_select_field"], edit_options, key="select_edit_field")
         
         # Find corresponding question key
         selected_q = next(q for q in QUESTIONS if q["label"].get(lang, q["label"]["English"]) == selected_edit_label)
         key = selected_q["key"]
         
         current_val_orig = st.session_state.answers_original.get(key, "")
-        new_val_orig = st.text_input(f"New response for '{selected_edit_label}':", value=current_val_orig, key=f"edit_input_{key}")
+        new_val_orig = st.text_input(UI_TEXTS[lang]["edit_new_response"].format(selected_edit_label=selected_edit_label), value=current_val_orig, key=f"edit_input_{key}")
         
-        if st.button("💾 Save Changes", use_container_width=True, key=f"save_edit_{key}"):
+        if st.button(UI_TEXTS[lang]["btn_save_changes"], use_container_width=True, key=f"save_edit_{key}"):
             st.session_state.answers_original[key] = new_val_orig
             
             # Translate to English
@@ -1049,7 +845,7 @@ elif st.session_state.flow_state == "summary":
             st.session_state.answers["final_drug_category"] = final_cat
             
             save_progress()
-            st.success(f"Updated '{selected_edit_label}' successfully!")
+            st.success(UI_TEXTS[lang]["edit_success"].format(selected_edit_label=selected_edit_label))
             st.rerun()
             
     col_sub, col_rest = st.columns(2)
@@ -1067,7 +863,7 @@ elif st.session_state.flow_state == "summary":
                 st.session_state.flow_state = "completed"
                 st.rerun()
             else:
-                st.error("Failed to save report. Please check database connection.")
+                st.error(UI_TEXTS[lang]["db_save_err"])
     with col_rest:
         if st.button(UI_TEXTS[lang]["btn_restart"], use_container_width=True):
             # Delete progress file
